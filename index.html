@@ -252,7 +252,6 @@ else
 (function() {
 	"use strict";
 
-	// Touch device detection
 	var isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 	if (!isTouch) return;
 
@@ -269,7 +268,6 @@ else
 		+ '<div class="nzp-touch-control" id="nzp-use-btn">USE</div>';
 	document.body.appendChild(overlay);
 
-	// Show overlay only after begin() — i.e. once canvas is ready
 	var origBegin = window.begin;
 	window.begin = function() {
 		origBegin.apply(window, arguments);
@@ -278,45 +276,48 @@ else
 
 	var canvas = document.getElementById("canvas");
 
-	function dispatchKey(code, type) {
-		var e = document.createEvent("KeyboardEvent");
-		if (typeof e.initKeyboardEvent === "function") {
-			e.initKeyboardEvent(type, true, true, window, 0, 0, code, code, false, false);
-		} else {
-			e.initKeyEvent(type, true, true, window, 0, 0, code, code, false, false, false, false, false, false, 0, 0);
-		}
+	// Use new KeyboardEvent with key + code (non-deprecated)
+	function dispatchKey(code, key, type) {
+		var e = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key, code: code });
 		canvas.dispatchEvent(e);
 	}
 
-	function dispatchMouse(type, x, y) {
-		var e = document.createEvent("MouseEvent");
-		e.initMouseEvent(type, true, true, window, 1, x, y, x, y,
-			false, false, false, false, 0, null);
+	// Use new MouseEvent with proper clientX/clientY and movementX/movementY
+	function dispatchMouse(type, x, y, movementX, movementY) {
+		var e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, movementX: movementX || 0, movementY: movementY || 0 });
 		canvas.dispatchEvent(e);
 	}
 
-	// Joystick logic
+	// Joystick logic with tracked key state for clean releases
 	var joystick = document.getElementById("nzp-joystick-base");
 	var knob = document.getElementById("nzp-joystick-knob");
 	var joyCenter = { x: 0, y: 0 };
 	var joyActive = false;
 	var joyId = -1;
+	var joyPressed = { w: false, s: false, a: false, d: false };
 
 	function updateKeysFromJoy(vx, vy) {
 		var threshold = 0.25;
-		// Forward (W) / Back (S)
-		if (vy < -threshold) dispatchKey("KeyW", "keydown");
-		else if (vy > threshold) dispatchKey("KeyS", "keydown");
-		else {
-			dispatchKey("KeyW", "keyup");
-			dispatchKey("KeyS", "keyup");
+		var wantW = vy < -threshold;
+		var wantS = vy > threshold;
+		var wantA = vx < -threshold;
+		var wantD = vx > threshold;
+
+		if (wantW !== joyPressed.w) {
+			joyPressed.w = wantW;
+			dispatchKey("KeyW", "w", wantW ? "keydown" : "keyup");
 		}
-		// Strafe Left (A) / Right (D)
-		if (vx < -threshold) dispatchKey("KeyA", "keydown");
-		else if (vx > threshold) dispatchKey("KeyD", "keydown");
-		else {
-			dispatchKey("KeyA", "keyup");
-			dispatchKey("KeyD", "keyup");
+		if (wantS !== joyPressed.s) {
+			joyPressed.s = wantS;
+			dispatchKey("KeyS", "s", wantS ? "keydown" : "keyup");
+		}
+		if (wantA !== joyPressed.a) {
+			joyPressed.a = wantA;
+			dispatchKey("KeyA", "a", wantA ? "keydown" : "keyup");
+		}
+		if (wantD !== joyPressed.d) {
+			joyPressed.d = wantD;
+			dispatchKey("KeyD", "d", wantD ? "keydown" : "keyup");
 		}
 	}
 
@@ -324,7 +325,7 @@ else
 		e.preventDefault();
 		var t = e.changedTouches[0];
 		var r = joystick.getBoundingClientRect();
-		joyCenter = { x: r.left + r.width/2, y: r.top + r.height/2 };
+		joyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 		joyActive = true;
 		joyId = t.identifier;
 	}, { passive: false });
@@ -340,36 +341,48 @@ else
 		var maxR = joystick.clientWidth / 2;
 		var dx = t.clientX - joyCenter.x;
 		var dy = t.clientY - joyCenter.y;
-		var dist = Math.sqrt(dx*dx + dy*dy);
-		if (dist > maxR) { dx = dx * (maxR / dist); dy = dy * (maxR / dist); }
+		var dist = Math.sqrt(dx * dx + dy * dy);
+		if (dist > maxR) {
+			dx = dx * (maxR / dist);
+			dy = dy * (maxR / dist);
+		}
 		knob.style.transform = "translate(" + dx + "px," + dy + "px)";
 		updateKeysFromJoy(dx / maxR, dy / maxR);
 	}, { passive: false });
 
-	function resetJoy(e) {
+	function resetJoy() {
 		if (!joyActive) return;
-		var t = e ? e.changedTouches[0] : null;
-		if (t && t.identifier !== joyId) return;
 		knob.style.transform = "translate(0,0)";
 		joyActive = false;
 		joyId = -1;
+		updateKeysFromJoy(0, 0);
 	}
 
 	joystick.addEventListener("touchend", function(e) {
 		e.preventDefault();
-		resetJoy(e);
-		updateKeysFromJoy(0, 0);
-	}, { passive: false });
-	joystick.addEventListener("touchcancel", function(e) {
-		e.preventDefault();
-		resetJoy(e);
-		updateKeysFromJoy(0, 0);
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === joyId) {
+				resetJoy();
+				break;
+			}
+		}
 	}, { passive: false });
 
-	// Look zone
+	joystick.addEventListener("touchcancel", function(e) {
+		e.preventDefault();
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === joyId) {
+				resetJoy();
+				break;
+			}
+		}
+	}, { passive: false });
+
+	// Look zone with proper relative mousemove events
 	var lookZone = document.getElementById("nzp-look-zone");
 	var lookId = -1;
 	var lastLook = { x: 0, y: 0 };
+	var lookScale = 0.1;
 
 	lookZone.addEventListener("touchstart", function(e) {
 		e.preventDefault();
@@ -383,47 +396,69 @@ else
 		for (var i = 0; i < e.changedTouches.length; i++) {
 			var t = e.changedTouches[i];
 			if (t.identifier !== lookId) continue;
-			var dx = t.clientX - lastLook.x;
-			var dy = t.clientY - lastLook.y;
-			dispatchMouse("mousemove", dx, dy);
+			var dx = (t.clientX - lastLook.x) * lookScale;
+			var dy = (t.clientY - lastLook.y) * lookScale;
+			dispatchMouse("mousemove", lastLook.x, lastLook.y, dx, dy);
 			lastLook = { x: t.clientX, y: t.clientY };
 		}
 	}, { passive: false });
 
+	function endLook(t) {
+		if (t.identifier === lookId) {
+			lookId = -1;
+			return true;
+		}
+		return false;
+	}
+
 	lookZone.addEventListener("touchend", function(e) {
 		e.preventDefault();
 		for (var i = 0; i < e.changedTouches.length; i++) {
-			if (e.changedTouches[i].identifier === lookId) { lookId = -1; break; }
+			if (endLook(e.changedTouches[i])) break;
 		}
 	}, { passive: false });
 
 	lookZone.addEventListener("touchcancel", function(e) {
 		e.preventDefault();
 		for (var i = 0; i < e.changedTouches.length; i++) {
-			if (e.changedTouches[i].identifier === lookId) { lookId = -1; break; }
+			if (endLook(e.changedTouches[i])) break;
 		}
 	}, { passive: false });
 
-	// Action buttons
+	// Fire button: mousedown/mouseup while held
+	var fireBtn = document.getElementById("nzp-fire-btn");
+	fireBtn.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		dispatchMouse("mousedown", canvas.clientWidth / 2, canvas.clientHeight / 2);
+	}, { passive: false });
+	fireBtn.addEventListener("touchend", function(e) {
+		e.preventDefault();
+		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+	}, { passive: false });
+	fireBtn.addEventListener("touchcancel", function(e) {
+		e.preventDefault();
+		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+	}, { passive: false });
+
+	// Other action buttons
 	var buttonDefs = [
-		{ id: "nzp-fire-btn",   code: "KeyF" },
-		{ id: "nzp-jump-btn",   code: "Space" },
-		{ id: "nzp-crouch-btn", code: "KeyC" },
-		{ id: "nzp-reload-btn", code: "KeyR" },
-		{ id: "nzp-use-btn",    code: "KeyE" }
+		{ id: "nzp-jump-btn",   code: "Space",    key: " " },
+		{ id: "nzp-crouch-btn", code: "KeyC",     key: "c" },
+		{ id: "nzp-reload-btn", code: "KeyR",     key: "r" },
+		{ id: "nzp-use-btn",    code: "KeyE",     key: "e" }
 	];
 
 	for (var b = 0; b < buttonDefs.length; b++) {
 		var btn = document.getElementById(buttonDefs[b].id);
-		btn.addEventListener("touchstart", (function(code) {
-			return function(e) { e.preventDefault(); dispatchKey(code, "keydown"); };
-		})(buttonDefs[b].code), { passive: false });
-		btn.addEventListener("touchend", (function(code) {
-			return function(e) { e.preventDefault(); dispatchKey(code, "keyup"); };
-		})(buttonDefs[b].code), { passive: false });
-		btn.addEventListener("touchcancel", (function(code) {
-			return function(e) { e.preventDefault(); dispatchKey(code, "keyup"); };
-		})(buttonDefs[b].code), { passive: false });
+		btn.addEventListener("touchstart", (function(code, key) {
+			return function(e) { e.preventDefault(); dispatchKey(code, key, "keydown"); };
+		})(buttonDefs[b].code, buttonDefs[b].key), { passive: false });
+		btn.addEventListener("touchend", (function(code, key) {
+			return function(e) { e.preventDefault(); dispatchKey(code, key, "keyup"); };
+		})(buttonDefs[b].code, buttonDefs[b].key), { passive: false });
+		btn.addEventListener("touchcancel", (function(code, key) {
+			return function(e) { e.preventDefault(); dispatchKey(code, key, "keyup"); };
+		})(buttonDefs[b].code, buttonDefs[b].key), { passive: false });
 	}
 })();
     </script>  
