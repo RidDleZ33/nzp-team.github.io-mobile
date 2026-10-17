@@ -355,6 +355,7 @@ function gotdrop(ev)
 		var wantS = vy > threshold;
 		var wantA = vx < -threshold;
 		var wantD = vx > threshold;
+		updateDebug("joy " + vx.toFixed(2) + "," + vy.toFixed(2));
 
 		// FTEQW expects uppercase key values
 		if (wantW !== joyPressed.w) {
@@ -406,7 +407,10 @@ function gotdrop(ev)
 			dy = dy * (maxR / dist);
 		}
 		knob.style.transform = "translate(" + dx + "px," + dy + "px)";
-		updateKeysFromJoy(dx / maxR, dy / maxR);
+		var nx = dx / maxR;
+		var ny = dy / maxR;
+		updateDebug("joy " + nx.toFixed(2) + "," + ny.toFixed(2));
+		updateKeysFromJoy(nx, ny);
 	}, { passive: false });
 
 	function resetJoy() {
