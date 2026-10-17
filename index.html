@@ -284,6 +284,17 @@ function gotdrop(ev)
 		}
 	}, 2000);
 
+	// Wait for FTE engine to initialize (sets up FTEC.evcb callbacks)
+	var engineReady = false;
+	var readyInterval = setInterval(function() {
+		if (window.FTEC && window.FTEC.evcb.key) {
+			engineReady = true;
+			updateDebug("engine ready");
+			clearInterval(readyInterval);
+		}
+	}, 500);
+	setTimeout(function() { clearInterval(readyInterval); }, 10000);
+
 	// FTE engine uses its own event handlers on the canvas via FTEC.evcb callbacks.
 	// Instead of dispatching synthetic DOM events, call those callbacks directly.
 	// Key codes: W=87, A=65, S=83, D=68, Space=32, C=67, R=82, E=69, ESC=27
