@@ -300,12 +300,13 @@ function gotdrop(ev)
 		debugEl.textContent = msg;
 	}
 
+	// FTE evcb.key signature: (keyboardid, pressed, keyCode, codepoint)
 	function callKey(keyCode, pressed) {
 		if (!window.FTEC || !window.FTEC.evcb.key) {
 			updateDebug("no key cb");
 			return;
 		}
-		window.getWasmTableEntry(window.FTEC.evcb.key)(pressed, keyCode, 0);
+		window.getWasmTableEntry(window.FTEC.evcb.key)(0, pressed, keyCode, 0);
 		updateDebug("key " + keyCode + (pressed ? " down" : " up"));
 	}
 
@@ -318,12 +319,14 @@ function gotdrop(ev)
 		updateDebug("btn " + button + (pressed ? " down" : " up"));
 	}
 
+	// FTE evcb.mouse signature: (keyboardid, pointerlock, x, y, 0, 0)
+	// When pointer-locked, x/y are movement deltas. We simulate that.
 	function callMouseMove(dx, dy) {
 		if (!window.FTEC || !window.FTEC.evcb.mouse) {
 			updateDebug("no mouse cb");
 			return;
 		}
-		window.getWasmTableEntry(window.FTEC.evcb.mouse)(0, false, 0, 0, dx, dy);
+		window.getWasmTableEntry(window.FTEC.evcb.mouse)(0, false, dx, dy, 0, 0);
 		updateDebug("look " + dx.toFixed(1) + "," + dy.toFixed(1));
 	}
 
