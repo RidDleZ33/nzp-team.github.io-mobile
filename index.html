@@ -530,12 +530,12 @@ function gotdrop(ev)
 		callKey(27, false);
 	}, { passive: false });
 
-	// Other action buttons
+	// Other action buttons (numeric key codes for FTE)
 	var buttonDefs = [
-		{ id: "nzp-jump-btn",   code: "Space",    key: " " },
-		{ id: "nzp-crouch-btn", code: "KeyC",     key: "c" },
-		{ id: "nzp-reload-btn", code: "KeyR",     key: "r" },
-		{ id: "nzp-use-btn",    code: "KeyE",     key: "e" }
+		{ id: "nzp-jump-btn",   code: 32 },
+		{ id: "nzp-crouch-btn", code: 67 },
+		{ id: "nzp-reload-btn", code: 82 },
+		{ id: "nzp-use-btn",    code: 69 }
 	];
 
 	for (var b = 0; b < buttonDefs.length; b++) {
