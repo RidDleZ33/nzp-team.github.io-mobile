@@ -313,8 +313,8 @@ function gotdrop(ev)
 
 	// FTE evcb.key signature: (keyboardid, pressed, keyCode, codepoint)
 	function callKey(keyCode, pressed) {
-		if (!window.FTEC || !window.FTEC.evcb.key) {
-			updateDebug("no key cb");
+		if (!engineReady) {
+			updateDebug("not ready");
 			return;
 		}
 		window.getWasmTableEntry(window.FTEC.evcb.key)(0, pressed, keyCode, 0);
@@ -322,8 +322,8 @@ function gotdrop(ev)
 	}
 
 	function callButton(button, pressed) {
-		if (!window.FTEC || !window.FTEC.evcb.button) {
-			updateDebug("no btn cb");
+		if (!engineReady) {
+			updateDebug("not ready");
 			return;
 		}
 		window.getWasmTableEntry(window.FTEC.evcb.button)(0, pressed, button);
@@ -333,8 +333,8 @@ function gotdrop(ev)
 	// FTE evcb.mouse signature: (keyboardid, pointerlock, x, y, 0, 0)
 	// When pointer-locked, x/y are movement deltas. We simulate that.
 	function callMouseMove(dx, dy) {
-		if (!window.FTEC || !window.FTEC.evcb.mouse) {
-			updateDebug("no mouse cb");
+		if (!engineReady) {
+			updateDebug("not ready");
 			return;
 		}
 		window.getWasmTableEntry(window.FTEC.evcb.mouse)(0, false, dx, dy, 0, 0);
