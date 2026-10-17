@@ -17,6 +17,63 @@
 	div.emscripten { text-align: center; padding:0; margin: 0;}
 	/* the canvas *must not* have any border or padding, or mouse coords will be wrong */
 	canvas.emscripten { border: 0px none; width:100%; height:100%; padding:0; margin: 0;}
+	/* --- Unofficial NZP Mobile Overlay --- */
+	#nzp-mobile-overlay {
+		position: fixed; inset: 0; z-index: 9999;
+		pointer-events: none; display: none;
+		touch-action: none; user-select: none;
+		-webkit-user-select: none;
+	}
+	.nzp-touch-control {
+		position: absolute; pointer-events: auto;
+		touch-action: none; user-select: none;
+		-webkit-user-select: none;
+	}
+	/* Virtual Joystick (bottom-left) */
+	#nzp-joystick-base {
+		bottom: 20px; left: 20px; width: 120px; height: 120px;
+		background: rgba(255,255,255,0.1); border-radius: 50%;
+	}
+	#nzp-joystick-knob {
+		position: absolute; top: 35px; left: 35px; width: 50px; height: 50px;
+		background: rgba(255,255,255,0.35); border-radius: 50%;
+		transform: translate(0,0);
+	}
+	/* Look Zone (right half, above buttons) */
+	#nzp-look-zone {
+		top: 0; right: 0; width: 50%; height: calc(100% - 140px);
+	}
+	/* Action Buttons (bottom-right) */
+	#nzp-fire-btn {
+		bottom: 60px; right: 20px; width: 70px; height: 70px;
+		background: rgba(180,40,20,0.5); border-radius: 50%;
+		color: #fff; font-size: 12px; display: flex; align-items: center;
+		justify-content: center; border: 2px solid rgba(255,255,255,0.3);
+	}
+	#nzp-jump-btn {
+		bottom: 140px; right: 100px; width: 50px; height: 50px;
+		background: rgba(255,255,255,0.15); border-radius: 50%;
+		color: #fff; font-size: 10px; display: flex; align-items: center;
+		justify-content: center;
+	}
+	#nzp-crouch-btn {
+		bottom: 20px; right: 100px; width: 50px; height: 50px;
+		background: rgba(255,255,255,0.15); border-radius: 50%;
+		color: #fff; font-size: 10px; display: flex; align-items: center;
+		justify-content: center;
+	}
+	#nzp-reload-btn {
+		bottom: 80px; right: 180px; width: 40px; height: 40px;
+		background: rgba(255,255,255,0.15); border-radius: 50%;
+		color: #fff; font-size: 9px; display: flex; align-items: center;
+		justify-content: center;
+	}
+	#nzp-use-btn {
+		bottom: 30px; right: 180px; width: 40px; height: 40px;
+		background: rgba(255,255,255,0.15); border-radius: 50%;
+		color: #fff; font-size: 9px; display: flex; align-items: center;
+		justify-content: center;
+	}
 	</style>
   </head>
   <body ondrop="gotdrop(event);" ondragover="event.preventDefault()">
@@ -190,6 +247,185 @@ if (window.location.hash != "" || Object.keys(Module.files).length)
 	begin();		//if the url has a #foo.fmf then just begin instantly, 
 else
 	showfiles();	//otherwise show our lame file dropper and wait for the user to click 'go'.
+
+// Unofficial NZP Mobile Overlay: virtual joystick, look zone, action buttons
+(function() {
+	"use strict";
+
+	// Touch device detection
+	var isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+	if (!isTouch) return;
+
+	var overlay = document.createElement("div");
+	overlay.id = "nzp-mobile-overlay";
+	overlay.innerHTML =
+		'<div class="nzp-touch-control" id="nzp-joystick-base">'
+		+ '<div id="nzp-joystick-knob"></div></div>'
+		+ '<div class="nzp-touch-control" id="nzp-look-zone"></div>'
+		+ '<div class="nzp-touch-control" id="nzp-fire-btn">FIRE</div>'
+		+ '<div class="nzp-touch-control" id="nzp-jump-btn">JUMP</div>'
+		+ '<div class="nzp-touch-control" id="nzp-crouch-btn">CRCH</div>'
+		+ '<div class="nzp-touch-control" id="nzp-reload-btn">RLD</div>'
+		+ '<div class="nzp-touch-control" id="nzp-use-btn">USE</div>';
+	document.body.appendChild(overlay);
+
+	// Show overlay only after begin() — i.e. once canvas is ready
+	var origBegin = window.begin;
+	window.begin = function() {
+		origBegin.apply(window, arguments);
+		overlay.style.display = "block";
+	};
+
+	var canvas = document.getElementById("canvas");
+
+	function dispatchKey(code, type) {
+		var e = document.createEvent("KeyboardEvent");
+		if (typeof e.initKeyboardEvent === "function") {
+			e.initKeyboardEvent(type, true, true, window, 0, 0, code, code, false, false);
+		} else {
+			e.initKeyEvent(type, true, true, window, 0, 0, code, code, false, false, false, false, false, false, 0, 0);
+		}
+		canvas.dispatchEvent(e);
+	}
+
+	function dispatchMouse(type, x, y) {
+		var e = document.createEvent("MouseEvent");
+		e.initMouseEvent(type, true, true, window, 1, x, y, x, y,
+			false, false, false, false, 0, null);
+		canvas.dispatchEvent(e);
+	}
+
+	// Joystick logic
+	var joystick = document.getElementById("nzp-joystick-base");
+	var knob = document.getElementById("nzp-joystick-knob");
+	var joyCenter = { x: 0, y: 0 };
+	var joyActive = false;
+	var joyId = -1;
+
+	function updateKeysFromJoy(vx, vy) {
+		var threshold = 0.25;
+		// Forward (W) / Back (S)
+		if (vy < -threshold) dispatchKey("KeyW", "keydown");
+		else if (vy > threshold) dispatchKey("KeyS", "keydown");
+		else {
+			dispatchKey("KeyW", "keyup");
+			dispatchKey("KeyS", "keyup");
+		}
+		// Strafe Left (A) / Right (D)
+		if (vx < -threshold) dispatchKey("KeyA", "keydown");
+		else if (vx > threshold) dispatchKey("KeyD", "keydown");
+		else {
+			dispatchKey("KeyA", "keyup");
+			dispatchKey("KeyD", "keyup");
+		}
+	}
+
+	joystick.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		var t = e.changedTouches[0];
+		var r = joystick.getBoundingClientRect();
+		joyCenter = { x: r.left + r.width/2, y: r.top + r.height/2 };
+		joyActive = true;
+		joyId = t.identifier;
+	}, { passive: false });
+
+	joystick.addEventListener("touchmove", function(e) {
+		e.preventDefault();
+		if (!joyActive) return;
+		var t = null;
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === joyId) { t = e.changedTouches[i]; break; }
+		}
+		if (!t) return;
+		var maxR = joystick.clientWidth / 2;
+		var dx = t.clientX - joyCenter.x;
+		var dy = t.clientY - joyCenter.y;
+		var dist = Math.sqrt(dx*dx + dy*dy);
+		if (dist > maxR) { dx = dx * (maxR / dist); dy = dy * (maxR / dist); }
+		knob.style.transform = "translate(" + dx + "px," + dy + "px)";
+		updateKeysFromJoy(dx / maxR, dy / maxR);
+	}, { passive: false });
+
+	function resetJoy(e) {
+		if (!joyActive) return;
+		var t = e ? e.changedTouches[0] : null;
+		if (t && t.identifier !== joyId) return;
+		knob.style.transform = "translate(0,0)";
+		joyActive = false;
+		joyId = -1;
+	}
+
+	joystick.addEventListener("touchend", function(e) {
+		e.preventDefault();
+		resetJoy(e);
+		updateKeysFromJoy(0, 0);
+	}, { passive: false });
+	joystick.addEventListener("touchcancel", function(e) {
+		e.preventDefault();
+		resetJoy(e);
+		updateKeysFromJoy(0, 0);
+	}, { passive: false });
+
+	// Look zone
+	var lookZone = document.getElementById("nzp-look-zone");
+	var lookId = -1;
+	var lastLook = { x: 0, y: 0 };
+
+	lookZone.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		var t = e.changedTouches[0];
+		lookId = t.identifier;
+		lastLook = { x: t.clientX, y: t.clientY };
+	}, { passive: false });
+
+	lookZone.addEventListener("touchmove", function(e) {
+		e.preventDefault();
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			var t = e.changedTouches[i];
+			if (t.identifier !== lookId) continue;
+			var dx = t.clientX - lastLook.x;
+			var dy = t.clientY - lastLook.y;
+			dispatchMouse("mousemove", dx, dy);
+			lastLook = { x: t.clientX, y: t.clientY };
+		}
+	}, { passive: false });
+
+	lookZone.addEventListener("touchend", function(e) {
+		e.preventDefault();
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === lookId) { lookId = -1; break; }
+		}
+	}, { passive: false });
+
+	lookZone.addEventListener("touchcancel", function(e) {
+		e.preventDefault();
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === lookId) { lookId = -1; break; }
+		}
+	}, { passive: false });
+
+	// Action buttons
+	var buttonDefs = [
+		{ id: "nzp-fire-btn",   code: "KeyF" },
+		{ id: "nzp-jump-btn",   code: "Space" },
+		{ id: "nzp-crouch-btn", code: "KeyC" },
+		{ id: "nzp-reload-btn", code: "KeyR" },
+		{ id: "nzp-use-btn",    code: "KeyE" }
+	];
+
+	for (var b = 0; b < buttonDefs.length; b++) {
+		var btn = document.getElementById(buttonDefs[b].id);
+		btn.addEventListener("touchstart", (function(code) {
+			return function(e) { e.preventDefault(); dispatchKey(code, "keydown"); };
+		})(buttonDefs[b].code), { passive: false });
+		btn.addEventListener("touchend", (function(code) {
+			return function(e) { e.preventDefault(); dispatchKey(code, "keyup"); };
+		})(buttonDefs[b].code), { passive: false });
+		btn.addEventListener("touchcancel", (function(code) {
+			return function(e) { e.preventDefault(); dispatchKey(code, "keyup"); };
+		})(buttonDefs[b].code), { passive: false });
+	}
+})();
     </script>  
     <img src="https://hits.sh/hits.sh/nzp-team.github.io/latest/game.html/hits.svg" style="opacity:0;width:0px;">
   </body>
