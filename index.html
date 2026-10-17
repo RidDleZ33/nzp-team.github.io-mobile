@@ -284,19 +284,47 @@ function gotdrop(ev)
 		}
 	}, 2000);
 
-	// Use new KeyboardEvent with key + code (non-deprecated)
-	// Dispatch to canvas, window, and document for maximum FTE compatibility
-	function dispatchKey(code, key, type) {
-		var e = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key, code: code });
-		canvas.dispatchEvent(e);
-		window.dispatchEvent(e);
-		document.dispatchEvent(e);
+	// FTE engine uses its own event handlers on the canvas via FTEC.evcb callbacks.
+	// Instead of dispatching synthetic DOM events, call those callbacks directly.
+	// Key codes: W=87, A=65, S=83, D=68, Space=32, C=67, R=82, E=69, ESC=27
+	// Mouse buttons: Left=0, Right=2
+
+	var debugEl = document.createElement("div");
+	debugEl.style.cssText = "position:absolute;bottom:150px;left:5px;color:#0f0;"
+		+ "font-size:10px;background:rgba(0,0,0,0.7);padding:2px 6px;border-radius:3px;"
+		+ "pointer-events:none;";
+	debugEl.textContent = "waiting...";
+	overlay.appendChild(debugEl);
+
+	function updateDebug(msg) {
+		debugEl.textContent = msg;
 	}
 
-	// Use new MouseEvent with proper clientX/clientY and movementX/movementY
-	function dispatchMouse(type, x, y, movementX, movementY) {
-		var e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, movementX: movementX || 0, movementY: movementY || 0 });
-		canvas.dispatchEvent(e);
+	function callKey(keyCode, pressed) {
+		if (!window.FTEC || !window.FTEC.evcb.key) {
+			updateDebug("no key cb");
+			return;
+		}
+		window.getWasmTableEntry(window.FTEC.evcb.key)(pressed, keyCode, 0);
+		updateDebug("key " + keyCode + (pressed ? " down" : " up"));
+	}
+
+	function callButton(button, pressed) {
+		if (!window.FTEC || !window.FTEC.evcb.button) {
+			updateDebug("no btn cb");
+			return;
+		}
+		window.getWasmTableEntry(window.FTEC.evcb.button)(0, pressed, button);
+		updateDebug("btn " + button + (pressed ? " down" : " up"));
+	}
+
+	function callMouseMove(dx, dy) {
+		if (!window.FTEC || !window.FTEC.evcb.mouse) {
+			updateDebug("no mouse cb");
+			return;
+		}
+		window.getWasmTableEntry(window.FTEC.evcb.mouse)(0, false, 0, 0, dx, dy);
+		updateDebug("look " + dx.toFixed(1) + "," + dy.toFixed(1));
 	}
 
 	// Joystick logic with tracked key state for clean releases
@@ -317,19 +345,19 @@ function gotdrop(ev)
 		// FTEQW expects uppercase key values
 		if (wantW !== joyPressed.w) {
 			joyPressed.w = wantW;
-			dispatchKey("KeyW", "W", wantW ? "keydown" : "keyup");
+			callKey(87, wantW);
 		}
 		if (wantS !== joyPressed.s) {
 			joyPressed.s = wantS;
-			dispatchKey("KeyS", "S", wantS ? "keydown" : "keyup");
+			callKey(83, wantS);
 		}
 		if (wantA !== joyPressed.a) {
 			joyPressed.a = wantA;
-			dispatchKey("KeyA", "A", wantA ? "keydown" : "keyup");
+			callKey(65, wantA);
 		}
 		if (wantD !== joyPressed.d) {
 			joyPressed.d = wantD;
-			dispatchKey("KeyD", "D", wantD ? "keydown" : "keyup");
+			callKey(68, wantD);
 		}
 	}
 
@@ -374,10 +402,10 @@ function gotdrop(ev)
 		joyId = -1;
 		knob.style.background = "rgba(255,255,255,0.35)";
 		// Force keyup for all movement keys on release
-		if (joyPressed.w) { dispatchKey("KeyW", "W", "keyup"); joyPressed.w = false; }
-		if (joyPressed.s) { dispatchKey("KeyS", "S", "keyup"); joyPressed.s = false; }
-		if (joyPressed.a) { dispatchKey("KeyA", "A", "keyup"); joyPressed.a = false; }
-		if (joyPressed.d) { dispatchKey("KeyD", "D", "keyup"); joyPressed.d = false; }
+		if (joyPressed.w) { callKey(87, false); joyPressed.w = false; }
+		if (joyPressed.s) { callKey(83, false); joyPressed.s = false; }
+		if (joyPressed.a) { callKey(65, false); joyPressed.a = false; }
+		if (joyPressed.d) { callKey(68, false); joyPressed.d = false; }
 	}
 
 	joystick.addEventListener("touchend", function(e) {
@@ -432,7 +460,7 @@ function gotdrop(ev)
 			}
 			var dx = (t.clientX - lastLook.x) * lookScale;
 			var dy = (t.clientY - lastLook.y) * lookScale;
-			dispatchMouse("mousemove", lastLook.x, lastLook.y, dx, dy);
+			callMouseMove(dx, dy);
 			lastLook = { x: t.clientX, y: t.clientY };
 		}
 	}, { passive: false });
@@ -442,8 +470,8 @@ function gotdrop(ev)
 		lookId = -1;
 		// If not dragged significantly, send click events for menu interaction
 		if (!lookDragged) {
-			dispatchMouse("mousedown", lookStart.x, lookStart.y);
-			dispatchMouse("mouseup", lookStart.x, lookStart.y);
+			callButton(0, true);
+			callButton(0, false);
 		}
 		return true;
 	}
@@ -466,15 +494,15 @@ function gotdrop(ev)
 	var fireBtn = document.getElementById("nzp-fire-btn");
 	fireBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
-		dispatchMouse("mousedown", canvas.clientWidth / 2, canvas.clientHeight / 2);
+		callButton(0, true);
 	}, { passive: false });
 	fireBtn.addEventListener("touchend", function(e) {
 		e.preventDefault();
-		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+		callButton(0, false);
 	}, { passive: false });
 	fireBtn.addEventListener("touchcancel", function(e) {
 		e.preventDefault();
-		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+		callButton(0, false);
 	}, { passive: false });
 
 	// Menu click button: sends mousedown+mouseup at canvas center
@@ -488,15 +516,15 @@ function gotdrop(ev)
 	overlay.appendChild(menuBtn);
 	menuBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
-		dispatchMouse("mousedown", canvas.clientWidth / 2, canvas.clientHeight / 2);
+		callKey(27, true);
 	}, { passive: false });
 	menuBtn.addEventListener("touchend", function(e) {
 		e.preventDefault();
-		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+		callKey(27, false);
 	}, { passive: false });
 	menuBtn.addEventListener("touchcancel", function(e) {
 		e.preventDefault();
-		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+		callKey(27, false);
 	}, { passive: false });
 
 	// Other action buttons
@@ -509,15 +537,15 @@ function gotdrop(ev)
 
 	for (var b = 0; b < buttonDefs.length; b++) {
 		var btn = document.getElementById(buttonDefs[b].id);
-		btn.addEventListener("touchstart", (function(code, key) {
-			return function(e) { e.preventDefault(); dispatchKey(code, key, "keydown"); };
-		})(buttonDefs[b].code, buttonDefs[b].key), { passive: false });
-		btn.addEventListener("touchend", (function(code, key) {
-			return function(e) { e.preventDefault(); dispatchKey(code, key, "keyup"); };
-		})(buttonDefs[b].code, buttonDefs[b].key), { passive: false });
-		btn.addEventListener("touchcancel", (function(code, key) {
-			return function(e) { e.preventDefault(); dispatchKey(code, key, "keyup"); };
-		})(buttonDefs[b].code, buttonDefs[b].key), { passive: false });
+		btn.addEventListener("touchstart", (function(keyCode) {
+			return function(e) { e.preventDefault(); callKey(keyCode, true); };
+		})(buttonDefs[b].code), { passive: false });
+		btn.addEventListener("touchend", (function(keyCode) {
+			return function(e) { e.preventDefault(); callKey(keyCode, false); };
+		})(buttonDefs[b].code), { passive: false });
+		btn.addEventListener("touchcancel", (function(keyCode) {
+			return function(e) { e.preventDefault(); callKey(keyCode, false); };
+		})(buttonDefs[b].code), { passive: false });
 	}
 
 	// Debug label to confirm overlay is present
