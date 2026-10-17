@@ -277,9 +277,12 @@ else
 	var canvas = document.getElementById("canvas");
 
 	// Use new KeyboardEvent with key + code (non-deprecated)
+	// Dispatch to canvas, window, and document for maximum FTE compatibility
 	function dispatchKey(code, key, type) {
 		var e = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key, code: code });
 		canvas.dispatchEvent(e);
+		window.dispatchEvent(e);
+		document.dispatchEvent(e);
 	}
 
 	// Use new MouseEvent with proper clientX/clientY and movementX/movementY
@@ -303,21 +306,22 @@ else
 		var wantA = vx < -threshold;
 		var wantD = vx > threshold;
 
+		// FTEQW expects uppercase key values
 		if (wantW !== joyPressed.w) {
 			joyPressed.w = wantW;
-			dispatchKey("KeyW", "w", wantW ? "keydown" : "keyup");
+			dispatchKey("KeyW", "W", wantW ? "keydown" : "keyup");
 		}
 		if (wantS !== joyPressed.s) {
 			joyPressed.s = wantS;
-			dispatchKey("KeyS", "s", wantS ? "keydown" : "keyup");
+			dispatchKey("KeyS", "S", wantS ? "keydown" : "keyup");
 		}
 		if (wantA !== joyPressed.a) {
 			joyPressed.a = wantA;
-			dispatchKey("KeyA", "a", wantA ? "keydown" : "keyup");
+			dispatchKey("KeyA", "A", wantA ? "keydown" : "keyup");
 		}
 		if (wantD !== joyPressed.d) {
 			joyPressed.d = wantD;
-			dispatchKey("KeyD", "d", wantD ? "keydown" : "keyup");
+			dispatchKey("KeyD", "D", wantD ? "keydown" : "keyup");
 		}
 	}
 
@@ -328,6 +332,11 @@ else
 		joyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 		joyActive = true;
 		joyId = t.identifier;
+		// Debug: flash knob to confirm touch registered
+		knob.style.background = "rgba(0,255,0,0.6)";
+		setTimeout(function() {
+			if (joyActive) knob.style.background = "rgba(255,255,255,0.35)";
+		}, 100);
 	}, { passive: false });
 
 	joystick.addEventListener("touchmove", function(e) {
@@ -355,7 +364,12 @@ else
 		knob.style.transform = "translate(0,0)";
 		joyActive = false;
 		joyId = -1;
-		updateKeysFromJoy(0, 0);
+		knob.style.background = "rgba(255,255,255,0.35)";
+		// Force keyup for all movement keys on release
+		if (joyPressed.w) { dispatchKey("KeyW", "W", "keyup"); joyPressed.w = false; }
+		if (joyPressed.s) { dispatchKey("KeyS", "S", "keyup"); joyPressed.s = false; }
+		if (joyPressed.a) { dispatchKey("KeyA", "A", "keyup"); joyPressed.a = false; }
+		if (joyPressed.d) { dispatchKey("KeyD", "D", "keyup"); joyPressed.d = false; }
 	}
 
 	joystick.addEventListener("touchend", function(e) {
@@ -378,17 +392,22 @@ else
 		}
 	}, { passive: false });
 
-	// Look zone with proper relative mousemove events
+	// Look zone: distinguish tap (menu click) from drag (camera look)
 	var lookZone = document.getElementById("nzp-look-zone");
 	var lookId = -1;
 	var lastLook = { x: 0, y: 0 };
-	var lookScale = 0.1;
+	var lookStart = { x: 0, y: 0 };
+	var lookDragged = false;
+	var lookScale = 1.5;
+	var tapThreshold = 8; // pixels
 
 	lookZone.addEventListener("touchstart", function(e) {
 		e.preventDefault();
 		var t = e.changedTouches[0];
 		lookId = t.identifier;
 		lastLook = { x: t.clientX, y: t.clientY };
+		lookStart = { x: t.clientX, y: t.clientY };
+		lookDragged = false;
 	}, { passive: false });
 
 	lookZone.addEventListener("touchmove", function(e) {
@@ -396,6 +415,13 @@ else
 		for (var i = 0; i < e.changedTouches.length; i++) {
 			var t = e.changedTouches[i];
 			if (t.identifier !== lookId) continue;
+			// Detect if this is a drag (not just tap jitter)
+			var distFromStart = Math.sqrt(
+				(t.clientX - lookStart.x) * (t.clientX - lookStart.x) +
+				(t.clientY - lookStart.y) * (t.clientY - lookStart.y));
+			if (distFromStart > tapThreshold) {
+				lookDragged = true;
+			}
 			var dx = (t.clientX - lastLook.x) * lookScale;
 			var dy = (t.clientY - lastLook.y) * lookScale;
 			dispatchMouse("mousemove", lastLook.x, lastLook.y, dx, dy);
@@ -404,11 +430,14 @@ else
 	}, { passive: false });
 
 	function endLook(t) {
-		if (t.identifier === lookId) {
-			lookId = -1;
-			return true;
+		if (t.identifier !== lookId) return false;
+		lookId = -1;
+		// If not dragged significantly, send click events for menu interaction
+		if (!lookDragged) {
+			dispatchMouse("mousedown", lookStart.x, lookStart.y);
+			dispatchMouse("mouseup", lookStart.x, lookStart.y);
 		}
-		return false;
+		return true;
 	}
 
 	lookZone.addEventListener("touchend", function(e) {
@@ -436,6 +465,28 @@ else
 		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
 	}, { passive: false });
 	fireBtn.addEventListener("touchcancel", function(e) {
+		e.preventDefault();
+		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+	}, { passive: false });
+
+	// Menu click button: sends mousedown+mouseup at canvas center
+	var menuBtn = document.createElement("div");
+	menuBtn.className = "nzp-touch-control";
+	menuBtn.id = "nzp-menu-btn";
+	menuBtn.style.cssText = "bottom: 140px; right: 20px; width: 40px; height: 40px;"
+		+ " background: rgba(255,255,255,0.15); border-radius: 50%; color: #fff;"
+		+ " font-size: 9px; display: flex; align-items: center; justify-content: center;";
+	menuBtn.textContent = "MENU";
+	overlay.appendChild(menuBtn);
+	menuBtn.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		dispatchMouse("mousedown", canvas.clientWidth / 2, canvas.clientHeight / 2);
+	}, { passive: false });
+	menuBtn.addEventListener("touchend", function(e) {
+		e.preventDefault();
+		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
+	}, { passive: false });
+	menuBtn.addEventListener("touchcancel", function(e) {
 		e.preventDefault();
 		dispatchMouse("mouseup", canvas.clientWidth / 2, canvas.clientHeight / 2);
 	}, { passive: false });
