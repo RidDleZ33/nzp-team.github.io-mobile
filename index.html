@@ -696,6 +696,46 @@ function gotdrop(ev)
 		})(buttonDefs[b]);
 	}
 
+	// Landscape fullscreen: when device rotates to landscape, go fullscreen.
+	// Some mobile browsers require a user gesture for requestFullscreen, but
+	// on Android Chrome the orientationchange event works as a gesture.
+	// iOS Safari often blocks fullscreen on non-user-gesture, so this is best-effort.
+	var inLandscapeFullscreen = false;
+	function handleOrientationChange() {
+		var landscape = false;
+		if (screen.orientation) {
+			landscape = screen.orientation.type === "landscape-primary" ||
+							screen.orientation.type === "landscape-secondary";
+		} else {
+			landscape = matchMedia("(orientation: landscape)").matches;
+		}
+		var canvas = document.getElementById("canvas");
+		if (landscape && !document.fullscreenElement && !document.webkitFullscreenElement) {
+			// Enter fullscreen
+			var target = canvas || document.documentElement;
+			if (target.requestFullscreen) {
+				target.requestFullscreen().catch(function() {});
+			} else if (target.webkitRequestFullscreen) {
+				target.webkitRequestFullscreen();
+			}
+			inLandscapeFullscreen = true;
+		} else if (!landscape && inLandscapeFullscreen) {
+			// Exit fullscreen
+			if (document.exitFullscreen) {
+				document.exitFullscreen().catch(function() {});
+			} else if (document.webkitExitFullscreen) {
+				document.webkitExitFullscreen();
+			}
+			inLandscapeFullscreen = false;
+		}
+	}
+	if (screen.orientation) {
+		screen.orientation.addEventListener("change", handleOrientationChange);
+	}
+	window.addEventListener("orientationchange", handleOrientationChange);
+	// Also check on load in case already in landscape
+	setTimeout(handleOrientationChange, 500);
+
 	// Debug label to confirm overlay is present
 	var debugLabel = document.createElement("div");
 	debugLabel.style.cssText = "position:absolute;top:5px;right:5px;color:#f00;"
