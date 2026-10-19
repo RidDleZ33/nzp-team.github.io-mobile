@@ -561,22 +561,52 @@ function gotdrop(ev)
 		}
 	}, { passive: false });
 
-		// ADS button: send mouse button 2 (right click) → +zoom
+		// ADS button: hold for zoom, move to aim while scoped
 	var adsBtn = document.getElementById("nzp-ads-btn");
+	var adsTouchId = -1;
+	var adsLast = { x: 0, y: 0 };
+	var adsMoved = false;
 	adsBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
+		var t = e.changedTouches[0];
+		adsTouchId = t.identifier;
+		adsLast = { x: t.clientX, y: t.clientY };
+		adsMoved = false;
 		callButton(2, true);
 		updateDebug("ads on");
 	}, { passive: false });
+	adsBtn.addEventListener("touchmove", function(e) {
+		e.preventDefault();
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			var t = e.changedTouches[i];
+			if (t.identifier !== adsTouchId) continue;
+			var dx = (t.clientX - adsLast.x) * lookScale;
+			var dy = (t.clientY - adsLast.y) * lookScale;
+			if (dx !== 0 || dy !== 0) {
+				callMouseMove(dx, dy);
+				adsMoved = true;
+			}
+			adsLast = { x: t.clientX, y: t.clientY };
+		}
+	}, { passive: false });
+	function adsRelease(t) {
+		if (t.identifier !== adsTouchId) return false;
+		adsTouchId = -1;
+		callButton(2, false);
+		updateDebug("ads off" + (adsMoved ? " (aimed)" : ""));
+		return true;
+	}
 	adsBtn.addEventListener("touchend", function(e) {
 		e.preventDefault();
-		callButton(2, false);
-		updateDebug("ads off");
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (adsRelease(e.changedTouches[i])) break;
+		}
 	}, { passive: false });
 	adsBtn.addEventListener("touchcancel", function(e) {
 		e.preventDefault();
-		callButton(2, false);
-		updateDebug("ads off");
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (adsRelease(e.changedTouches[i])) break;
+		}
 	}, { passive: false });
 
 	// Fire button: map to gamepad Right Trigger (button 7) → +attack (fire)
