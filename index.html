@@ -754,11 +754,193 @@ function gotdrop(ev)
 	// Also check on load in case already in landscape
 	setTimeout(handleOrientationChange, 500);
 
+	// Mobile soft keyboard for text input fields (console, menu text inputs)
+	// Creates a hidden <input> element and routes its input events to the engine
+	// as synthetic keyboard events via FTEC.evcb.key.
+	//
+	// Browser limitations:
+	//   - iOS Safari: keyboard may appear but input events can be inconsistent
+	//   - Some Android browsers: focus() may not trigger keyboard without user gesture
+	//   - Hidden input must still be focusable (opacity:0, position:fixed)
+	//   - Enter key handling varies by browser (submit vs newline)
+	//
+	// Usage: tap CONSOLE button to open console and show keyboard. Tap KEYBOARD
+	// button while in a menu text field to type into it. Tap KEYBOARD again or
+	// tap outside to dismiss.
+
+	var keyboardOverlay = document.createElement("div");
+	keyboardOverlay.id = "nzp-keyboard-overlay";
+	keyboardOverlay.style.cssText = "position:fixed;inset:0;z-index:10000;"
+		+ "background:rgba(0,0,0,0.5);display:none;";
+	keyboardOverlay.innerHTML =
+		'<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+		'width:90%;max-width:400px;background:rgba(20,20,20,0.95);border-radius:10px;' +
+		'padding:15px;">' +
+		'<input type="text" id="nzp-keyboard-input" autocomplete="off" autocorrect="off" ' +
+		'autocapitalize="off" spellcheck="false" ' +
+		'style="width:100%;padding:10px;font-size:16px;background:rgba(0,0,0,0.5);' +
+		'color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:5px;outline:none;">' +
+		'<div style="display:flex;justify-content:space-between;margin-top:10px;">' +
+		'<button id="nzp-keyboard-cancel" style="padding:8px 16px;background:rgba(100,100,100,0.5);' +
+		'color:#fff;border:none;border-radius:5px;">Cancel</button>' +
+		'<button id="nzp-keyboard-done" style="padding:8px 16px;background:rgba(40,120,40,0.7);' +
+		'color:#fff;border:none;border-radius:5px;">Done</button>' +
+		'</div></div>';
+	document.body.appendChild(keyboardOverlay);
+
+	var keyboardInput = document.getElementById("nzp-keyboard-input");
+	var keyboardActive = false;
+	var keyboardTarget = null; // "console" or "menu"
+
+	function openKeyboard(target) {
+		if (!engineReady) {
+			updateDebug("kb: not ready");
+			return;
+		}
+		keyboardActive = true;
+		keyboardTarget = target;
+		keyboardOverlay.style.display = "block";
+		keyboardInput.value = "";
+		// Delay focus to ensure overlay is rendered
+		setTimeout(function() {
+			keyboardInput.focus();
+		}, 100);
+		updateDebug("kb: opened (" + target + ")");
+	}
+
+	function closeKeyboard() {
+		keyboardActive = false;
+		keyboardOverlay.style.display = "none";
+		keyboardInput.blur();
+		updateDebug("kb: closed");
+	}
+
+	function sendCharToEngine(ch) {
+		if (!engineReady) return;
+		var code = ch.charCodeAt(0);
+		// Map ASCII to FTE key codes (same as ASCII for printable chars)
+		// For special chars, use the code directly
+		var evcbKey = window.FTEC.evcb.key;
+		if (code >= 65 && code <= 90) {
+			// Uppercase: send shift + letter
+			getWasmTableEntry(evcbKey)(0, true, 16, 0); // shift down
+			getWasmTableEntry(evcbKey)(0, true, code + 32, 0); // letter down (lowercase code)
+			getWasmTableEntry(evcbKey)(0, false, code + 32, 0); // letter up
+			getWasmTableEntry(evcbKey)(0, false, 16, 0); // shift up
+		} else if (code >= 97 && code <= 122) {
+			getWasmTableEntry(evcbKey)(0, true, code, 0);
+			getWasmTableEntry(evcbKey)(0, false, code, 0);
+		} else if (code >= 48 && code <= 57) {
+			getWasmTableEntry(evcbKey)(0, true, code, 0);
+			getWasmTableEntry(evcbKey)(0, false, code, 0);
+		} else if (code === 32) {
+			// Space
+			getWasmTableEntry(evcbKey)(0, true, 32, 0);
+			getWasmTableEntry(evcbKey)(0, false, 32, 0);
+		} else {
+			// Punctuation/symbols: send code directly
+			getWasmTableEntry(evcbKey)(0, true, code, 0);
+			getWasmTableEntry(evcbKey)(0, false, code, 0);
+		}
+	}
+
+	// Handle input events: route each character to the engine
+	keyboardInput.addEventListener("input", function(e) {
+		var val = e.target.value;
+		// Process each character in the input
+		for (var i = 0; i < val.length; i++) {
+			sendCharToEngine(val[i]);
+		}
+		updateDebug("kb: typed " + val);
+	});
+
+	// Handle Enter key (submit console command)
+	keyboardInput.addEventListener("keydown", function(e) {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			// Send Enter key to engine
+			getWasmTableEntry(window.FTEC.evcb.key)(0, true, 13, 0);
+			setTimeout(function() {
+				getWasmTableEntry(window.FTEC.evcb.key)(0, false, 13, 0);
+			}, 50);
+			updateDebug("kb: enter");
+		}
+	});
+
+	// Handle backspace
+	keyboardInput.addEventListener("keyup", function(e) {
+		if (e.key === "Backspace") {
+			getWasmTableEntry(window.FTEC.evcb.key)(0, true, 8, 0);
+			setTimeout(function() {
+				getWasmTableEntry(window.FTEC.evcb.key)(0, false, 8, 0);
+			}, 50);
+			updateDebug("kb: backspace");
+		}
+	});
+
+	// Done button
+	document.getElementById("nzp-keyboard-done").addEventListener("click", function() {
+		closeKeyboard();
+	});
+
+	// Cancel button
+	document.getElementById("nzp-keyboard-cancel").addEventListener("click", function() {
+		closeKeyboard();
+	});
+
+	// Tap outside to dismiss
+	keyboardOverlay.addEventListener("click", function(e) {
+		if (e.target === keyboardOverlay) {
+			closeKeyboard();
+		}
+	});
+
+	// CONSOLE button: open console and keyboard
+	var consoleBtn = document.createElement("div");
+	consoleBtn.className = "nzp-touch-control";
+	consoleBtn.id = "nzp-console-btn";
+	consoleBtn.style.cssText = "bottom: 30px; left: 180px; width: 50px; height: 50px;"
+		+ " background: rgba(40,80,120,0.5); border-radius: 50%; color: #fff;"
+		+ " font-size: 9px; display: flex; align-items: center; justify-content: center;"
+		+ " border: 2px solid rgba(255,255,255,0.3);";
+	consoleBtn.textContent = "CONSOLE";
+	overlay.appendChild(consoleBtn);
+
+	consoleBtn.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		// Toggle console with backtick key (96)
+		getWasmTableEntry(window.FTEC.evcb.key)(0, true, 96, 0);
+		setTimeout(function() {
+			getWasmTableEntry(window.FTEC.evcb.key)(0, false, 96, 0);
+		}, 50);
+		updateDebug("console toggle");
+	}, { passive: false });
+
+	// KEYBOARD button: show soft keyboard for menu text fields
+	var kbBtn = document.createElement("div");
+	kbBtn.className = "nzp-touch-control";
+	kbBtn.id = "nzp-kb-btn";
+	kbBtn.style.cssText = "bottom: 30px; left: 120px; width: 50px; height: 50px;"
+		+ " background: rgba(120,80,40,0.5); border-radius: 50%; color: #fff;"
+		+ " font-size: 9px; display: flex; align-items: center; justify-content: center;"
+		+ " border: 2px solid rgba(255,255,255,0.3);";
+	kbBtn.textContent = "KB";
+	overlay.appendChild(kbBtn);
+
+	kbBtn.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		if (keyboardActive) {
+			closeKeyboard();
+		} else {
+			openKeyboard("menu");
+		}
+	}, { passive: false });
+
 	// Debug label to confirm overlay is present
 	var debugLabel = document.createElement("div");
 	debugLabel.style.cssText = "position:absolute;top:5px;right:5px;color:#f00;"
 		+ "font-size:10px;background:rgba(0,0,0,0.5);padding:2px 6px;border-radius:3px;";
-	debugLabel.textContent = "NZP MOBILE | sprint L3(10) | swap btn2";
+	debugLabel.textContent = "NZP MOBILE | KB+CONSOLE";
 	overlay.appendChild(debugLabel);
 })();
 
