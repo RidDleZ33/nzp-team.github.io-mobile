@@ -513,6 +513,7 @@ function gotdrop(ev)
 	var lookStart = { x: 0, y: 0 };
 	var lookDragged = false;
 	var lookScale = 1.5;
+	var lookZoneScale = 3.0;
 	var tapThreshold = 8; // pixels
 
 	lookZone.addEventListener("touchstart", function(e) {
@@ -536,8 +537,9 @@ function gotdrop(ev)
 			if (distFromStart > tapThreshold) {
 				lookDragged = true;
 			}
-			var dx = (t.clientX - lastLook.x) * lookScale;
-			var dy = (t.clientY - lastLook.y) * lookScale;
+			// Look zone uses its own higher scale; ADS button uses lookScale
+			var dx = (t.clientX - lastLook.x) * lookZoneScale;
+			var dy = (t.clientY - lastLook.y) * lookZoneScale;
 			callMouseMove(dx, dy);
 			lastLook = { x: t.clientX, y: t.clientY };
 		}
