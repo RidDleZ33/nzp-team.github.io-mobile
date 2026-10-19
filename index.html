@@ -331,9 +331,9 @@ function gotdrop(ev)
 	//   Fire button → button 7 (RT, +attack)
 	//   Jump button → button 0 (A, +jump)
 	//   Crouch button → button 1 (B, +crouch)
-	//   Reload button → button 2 (X, +reload via weapon switch)
-	//   Use button → button 3 (Y, +use)
-	//   Double-tap joystick → button 10 (L3, +speed/sprint)
+	//   Reload button → button 3 (Y, +reload) - observed to reload
+	//   Use button → button 2 (X, +use) - try X for interact
+	//   Double-tap joystick → button 2 (X, +speed/sprint) - FTE binds +speed to X
 	var virtualPad = {
 		index: 0,
 		id: "NZP Virtual Gamepad",
@@ -389,7 +389,7 @@ function gotdrop(ev)
 	}
 
 	// Joystick: map to gamepad axes 0 (strafe) and 1 (forward/back)
-	// Double-tap-hold sprint: two touchstarts within 300ms → L3 (button 10, +speed)
+	// Double-tap-hold sprint: two touchstarts within 400ms → button 2 (X, +speed)
 	var joystick = document.getElementById("nzp-joystick-base");
 	var knob = document.getElementById("nzp-joystick-knob");
 	var joyCenter = { x: 0, y: 0 };
@@ -398,14 +398,20 @@ function gotdrop(ev)
 	var lastJoyTap = 0;
 	var joyDeflected = false;
 
+	var sprintActive = false;
+
 	function activateSprint() {
-		setGamepadButton(10, true);
-		updateDebug("sprint L3(10) on");
+		if (sprintActive) return;
+		sprintActive = true;
+		setGamepadButton(2, true);
+		updateDebug("sprint X(2) on");
 	}
 
 	function deactivateSprint() {
-		setGamepadButton(10, false);
-		updateDebug("sprint L3(10) off");
+		if (!sprintActive) return;
+		sprintActive = false;
+		setGamepadButton(2, false);
+		updateDebug("sprint X(2) off");
 	}
 
 	joystick.addEventListener("touchstart", function(e) {
@@ -416,9 +422,9 @@ function gotdrop(ev)
 		joyActive = true;
 		joyId = t.identifier;
 
-		// Double-tap detection
+		// Double-tap detection - activate on second touchstart even before deflection
 		var now = Date.now();
-		if (now - lastJoyTap < 300) {
+		if (now - lastJoyTap < 400) {
 			activateSprint();
 		}
 		lastJoyTap = now;
@@ -597,13 +603,13 @@ function gotdrop(ev)
 	// Action buttons: map to FTE default gamepad indices
 	// Jump → button 0 (A, +jump)
 	// Crouch → button 1 (B, +crouch)
-	// Reload → button 2 (X, +reload)
-	// Use → button 3 (Y, +use)
+	// Reload → button 3 (Y, +reload) - observed to reload
+	// Use → button 2 (X, +use) - try X for interact
 	var buttonDefs = [
 		{ id: "nzp-jump-btn",   gpBtn: 0 },
 		{ id: "nzp-crouch-btn", gpBtn: 1 },
-		{ id: "nzp-reload-btn", gpBtn: 2 },
-		{ id: "nzp-use-btn",    gpBtn: 3 }
+		{ id: "nzp-reload-btn", gpBtn: 3 },
+		{ id: "nzp-use-btn",    gpBtn: 2 }
 	];
 
 	for (var b = 0; b < buttonDefs.length; b++) {
