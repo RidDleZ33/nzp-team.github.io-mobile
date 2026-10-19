@@ -530,6 +530,21 @@ function gotdrop(ev)
 	var lookZoneScale = 3.0;
 	var tapThreshold = 8; // pixels
 
+	// Convert touch client coords to canvas-relative coords (scaled for CSS/devicePixelRatio)
+	function touchToCanvasCoords(t) {
+		var canvas = document.getElementById("canvas");
+		var rect = canvas.getBoundingClientRect();
+		var x = (t.clientX - rect.left) * (canvas.width / rect.width);
+		var y = (t.clientY - rect.top) * (canvas.height / rect.height);
+		return { x: x, y: y };
+	}
+
+	// Send absolute mouse position to engine (pointerlock=true means absolute coords)
+	function sendMousePosition(x, y) {
+		if (!engineReady) return;
+		window.getWasmTableEntry(window.FTEC.evcb.mouse)(0, true, x, y, 0, 0);
+	}
+
 	lookZone.addEventListener("touchstart", function(e) {
 		e.preventDefault();
 		var t = e.changedTouches[0];
@@ -537,6 +552,10 @@ function gotdrop(ev)
 		lastLook = { x: t.clientX, y: t.clientY };
 		lookStart = { x: t.clientX, y: t.clientY };
 		lookDragged = false;
+		// Send absolute position so reticle appears under finger (fixes menu alignment)
+		var cc = touchToCanvasCoords(t);
+		sendMousePosition(cc.x, cc.y);
+		updateDebug("touch " + t.clientX + "," + t.clientY + " -> " + cc.x.toFixed(1) + "," + cc.y.toFixed(1));
 	}, { passive: false });
 
 	lookZone.addEventListener("touchmove", function(e) {
@@ -551,10 +570,15 @@ function gotdrop(ev)
 			if (distFromStart > tapThreshold) {
 				lookDragged = true;
 			}
-			// Look zone uses its own higher scale; ADS button uses lookScale
-			var dx = (t.clientX - lastLook.x) * lookZoneScale;
-			var dy = (t.clientY - lastLook.y) * lookZoneScale;
-			callMouseMove(dx, dy);
+			// Send absolute position for reticle tracking
+			var cc = touchToCanvasCoords(t);
+			sendMousePosition(cc.x, cc.y);
+			// Also send deltas for look sensitivity during gameplay
+			if (lookDragged) {
+				var dx = (t.clientX - lastLook.x) * lookZoneScale;
+				var dy = (t.clientY - lastLook.y) * lookZoneScale;
+				callMouseMove(dx, dy);
+			}
 			lastLook = { x: t.clientX, y: t.clientY };
 		}
 	}, { passive: false });
