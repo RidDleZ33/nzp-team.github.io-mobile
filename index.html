@@ -311,14 +311,43 @@ function gotdrop(ev)
 		debugEl.textContent = msg;
 	}
 
-	// FTE evcb.key signature: (keyboardid, pressed, keyCode, codepoint)
-	function callKey(keyCode, pressed) {
-		if (!engineReady) {
-			updateDebug("not ready");
-			return;
+	// Virtual gamepad via navigator.getGamepads() polyfill
+	// Engine polls this each frame in _emscriptenfte_polljoyevents().
+	// Standard button layout: 0=A(Fire), 1=B(Crouch), 2=X(Jump), 3=Y,
+	// 4=LB, 5=LT(Use), 6=RB, 7=RT, 8=Back, 9=Start, 10=Select, 11=Home,
+	// 12=Up, 13=Down, 14=Left, 15=Right
+	var virtualPad = {
+		index: 0,
+		id: "NZP Virtual Gamepad",
+		mapping: "standard",
+		axes: [0, 0, 0, 0],
+		buttons: []
+	};
+	for (var i = 0; i < 16; i++) {
+		virtualPad.buttons.push({ pressed: false, value: 0, lastframe: false });
+	}
+
+	var origGetGamepads = navigator.getGamepads;
+	navigator.getGamepads = function() {
+		var pads;
+		try {
+			pads = origGetGamepads ? origGetGamepads.call(navigator) : [];
+		} catch(e) {
+			pads = [];
 		}
-		window.getWasmTableEntry(window.FTEC.evcb.key)(0, pressed, keyCode, 0);
-		updateDebug("key " + keyCode + (pressed ? " down" : " up"));
+		var result = [virtualPad];
+		for (var i = 0; i < pads.length; i++) {
+			if (pads[i] && pads[i].index !== 0) {
+				result.push(pads[i]);
+			}
+		}
+		return result;
+	};
+
+	function setGamepadButton(index, pressed) {
+		if (index < 0 || index >= virtualPad.buttons.length) return;
+		virtualPad.buttons[index].pressed = pressed;
+		virtualPad.buttons[index].value = pressed ? 1 : 0;
 	}
 
 	function callButton(button, pressed) {
@@ -341,40 +370,12 @@ function gotdrop(ev)
 		updateDebug("look " + dx.toFixed(1) + "," + dy.toFixed(1));
 	}
 
-	// Joystick logic with tracked key state for clean releases
+	// Joystick: map to gamepad axes 0 (strafe) and 1 (forward/back)
 	var joystick = document.getElementById("nzp-joystick-base");
 	var knob = document.getElementById("nzp-joystick-knob");
 	var joyCenter = { x: 0, y: 0 };
 	var joyActive = false;
 	var joyId = -1;
-	var joyPressed = { w: false, s: false, a: false, d: false };
-
-	function updateKeysFromJoy(vx, vy) {
-		var threshold = 0.25;
-		var wantW = vy < -threshold;
-		var wantS = vy > threshold;
-		var wantA = vx < -threshold;
-		var wantD = vx > threshold;
-		updateDebug("joy " + vx.toFixed(2) + "," + vy.toFixed(2));
-
-		// FTEQW expects uppercase key values
-		if (wantW !== joyPressed.w) {
-			joyPressed.w = wantW;
-			callKey(87, wantW);
-		}
-		if (wantS !== joyPressed.s) {
-			joyPressed.s = wantS;
-			callKey(83, wantS);
-		}
-		if (wantA !== joyPressed.a) {
-			joyPressed.a = wantA;
-			callKey(65, wantA);
-		}
-		if (wantD !== joyPressed.d) {
-			joyPressed.d = wantD;
-			callKey(68, wantD);
-		}
-	}
 
 	joystick.addEventListener("touchstart", function(e) {
 		e.preventDefault();
@@ -383,7 +384,6 @@ function gotdrop(ev)
 		joyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 		joyActive = true;
 		joyId = t.identifier;
-		// Debug: flash knob to confirm touch registered
 		knob.style.background = "rgba(0,255,0,0.6)";
 		setTimeout(function() {
 			if (joyActive) knob.style.background = "rgba(255,255,255,0.35)";
@@ -407,23 +407,20 @@ function gotdrop(ev)
 			dy = dy * (maxR / dist);
 		}
 		knob.style.transform = "translate(" + dx + "px," + dy + "px)";
-		var nx = dx / maxR;
-		var ny = dy / maxR;
-		updateDebug("joy " + nx.toFixed(2) + "," + ny.toFixed(2));
-		updateKeysFromJoy(nx, ny);
+		virtualPad.axes[0] = dx / maxR;
+		virtualPad.axes[1] = dy / maxR;
+		updateDebug("axis " + virtualPad.axes[0].toFixed(2) + "," + virtualPad.axes[1].toFixed(2));
 	}, { passive: false });
 
 	function resetJoy() {
 		if (!joyActive) return;
 		knob.style.transform = "translate(0,0)";
+		virtualPad.axes[0] = 0;
+		virtualPad.axes[1] = 0;
 		joyActive = false;
 		joyId = -1;
 		knob.style.background = "rgba(255,255,255,0.35)";
-		// Force keyup for all movement keys on release
-		if (joyPressed.w) { callKey(87, false); joyPressed.w = false; }
-		if (joyPressed.s) { callKey(83, false); joyPressed.s = false; }
-		if (joyPressed.a) { callKey(65, false); joyPressed.a = false; }
-		if (joyPressed.d) { callKey(68, false); joyPressed.d = false; }
+		updateDebug("joy reset");
 	}
 
 	joystick.addEventListener("touchend", function(e) {
@@ -534,36 +531,50 @@ function gotdrop(ev)
 	overlay.appendChild(menuBtn);
 	menuBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
-		callKey(27, true);
+		if (engineReady) {
+			getWasmTableEntry(window.FTEC.evcb.key)(0, true, 27, 0);
+		}
 	}, { passive: false });
 	menuBtn.addEventListener("touchend", function(e) {
 		e.preventDefault();
-		callKey(27, false);
+		if (engineReady) {
+			getWasmTableEntry(window.FTEC.evcb.key)(0, false, 27, 0);
+		}
 	}, { passive: false });
 	menuBtn.addEventListener("touchcancel", function(e) {
 		e.preventDefault();
-		callKey(27, false);
+		if (engineReady) {
+			getWasmTableEntry(window.FTEC.evcb.key)(0, false, 27, 0);
+		}
 	}, { passive: false });
 
-	// Other action buttons (numeric key codes for FTE)
+	// Action buttons: gamepad buttons
+	// Jump=X(2), Crouch=B(1), Reload=RB(9), Use=LT(5)
 	var buttonDefs = [
-		{ id: "nzp-jump-btn",   code: 32 },
-		{ id: "nzp-crouch-btn", code: 67 },
-		{ id: "nzp-reload-btn", code: 82 },
-		{ id: "nzp-use-btn",    code: 69 }
+		{ id: "nzp-jump-btn",   gpBtn: 2 },
+		{ id: "nzp-crouch-btn", gpBtn: 1 },
+		{ id: "nzp-reload-btn", gpBtn: 9 },
+		{ id: "nzp-use-btn",    gpBtn: 5 }
 	];
 
 	for (var b = 0; b < buttonDefs.length; b++) {
-		var btn = document.getElementById(buttonDefs[b].id);
-		btn.addEventListener("touchstart", (function(keyCode) {
-			return function(e) { e.preventDefault(); callKey(keyCode, true); };
-		})(buttonDefs[b].code), { passive: false });
-		btn.addEventListener("touchend", (function(keyCode) {
-			return function(e) { e.preventDefault(); callKey(keyCode, false); };
-		})(buttonDefs[b].code), { passive: false });
-		btn.addEventListener("touchcancel", (function(keyCode) {
-			return function(e) { e.preventDefault(); callKey(keyCode, false); };
-		})(buttonDefs[b].code), { passive: false });
+		(function(def) {
+			var btn = document.getElementById(def.id);
+			btn.addEventListener("touchstart", function(e) {
+				e.preventDefault();
+				setGamepadButton(def.gpBtn, true);
+				updateDebug(def.id + " on");
+			}, { passive: false });
+			btn.addEventListener("touchend", function(e) {
+				e.preventDefault();
+				setGamepadButton(def.gpBtn, false);
+				updateDebug(def.id + " off");
+			}, { passive: false });
+			btn.addEventListener("touchcancel", function(e) {
+				e.preventDefault();
+				setGamepadButton(def.gpBtn, false);
+			}, { passive: false });
+		})(buttonDefs[b]);
 	}
 
 	// Debug label to confirm overlay is present
