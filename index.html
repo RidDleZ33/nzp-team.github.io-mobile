@@ -80,6 +80,12 @@
 		color: #fff; font-size: 9px; display: flex; align-items: center;
 		justify-content: center;
 	}
+	#nzp-weapswap-btn {
+		bottom: 155px; left: 35px; width: 40px; height: 40px;
+		background: rgba(180,180,40,0.5); border-radius: 50%;
+		color: #fff; font-size: 9px; display: flex; align-items: center;
+		justify-content: center; border: 2px solid rgba(255,255,255,0.3);
+	}
 	#nzp-ads-btn {
 		bottom: 70px; left: 155px; width: 50px; height: 50px;
 		background: rgba(40,100,180,0.5); border-radius: 50%;
@@ -268,6 +274,7 @@ function gotdrop(ev)
 	overlay.id = "nzp-mobile-overlay";
 	overlay.innerHTML =
 		'<div class="nzp-touch-control" id="nzp-ads-btn">ADS</div>'
+		+ '<div class="nzp-touch-control" id="nzp-weapswap-btn">SWAP</div>'
 		+ '<div class="nzp-touch-control" id="nzp-joystick-base">'
 		+ '<div id="nzp-joystick-knob"></div></div>'
 		+ '<div class="nzp-touch-control" id="nzp-look-zone"></div>'
@@ -360,6 +367,10 @@ function gotdrop(ev)
 		virtualPad.buttons.push({ pressed: false, value: 0, lastframe: false });
 	}
 
+	// Sprint: FTE binds +speed to L3 (button 10) by default, but NZP may override.
+	// Fallback: send Shift (keycode 16) which is the default Quake sprint key.
+	var shiftKey = 16;
+
 	var origGetGamepads = navigator.getGamepads;
 	navigator.getGamepads = function() {
 		var pads;
@@ -418,15 +429,18 @@ function gotdrop(ev)
 	function activateSprint() {
 		if (sprintActive) return;
 		sprintActive = true;
-		setGamepadButton(2, true);
-		updateDebug("sprint X(2) on");
+		setGamepadButton(10, true);
+		// Keyboard fallback: Shift = default +speed key in Quake
+		getWasmTableEntry(window.FTEC.evcb.key)(0, true, shiftKey, 0);
+		updateDebug("sprint L3(10) on");
 	}
 
 	function deactivateSprint() {
 		if (!sprintActive) return;
 		sprintActive = false;
-		setGamepadButton(2, false);
-		updateDebug("sprint X(2) off");
+		setGamepadButton(10, false);
+		getWasmTableEntry(window.FTEC.evcb.key)(0, false, shiftKey, 0);
+		updateDebug("sprint L3(10) off");
 	}
 
 	joystick.addEventListener("touchstart", function(e) {
@@ -669,13 +683,16 @@ function gotdrop(ev)
 	// Jump → button 0 (A, +jump)
 	// Crouch → button 1 (B, +crouch)
 	// Reload → button 3 (Y, +reload) - observed to reload
-	// Use → button 2 (X, +use) - try X for interact
+	// Use → button 13 (dpad down, +use) - observed to work
+	// Grenade → button 5 (LT, +button3)
+	// Weapon Swap → button 2 (X, +speed) - observed to swap weapons in NZP
 	var buttonDefs = [
 		{ id: "nzp-jump-btn",   gpBtn: 0 },
 		{ id: "nzp-crouch-btn", gpBtn: 1 },
 		{ id: "nzp-reload-btn", gpBtn: 3 },
 		{ id: "nzp-use-btn",    gpBtn: 13 },
-		{ id: "nzp-grenade-btn", gpBtn: 5 }
+		{ id: "nzp-grenade-btn", gpBtn: 5 },
+		{ id: "nzp-weapswap-btn", gpBtn: 2 }
 	];
 
 	for (var b = 0; b < buttonDefs.length; b++) {
@@ -741,7 +758,7 @@ function gotdrop(ev)
 	var debugLabel = document.createElement("div");
 	debugLabel.style.cssText = "position:absolute;top:5px;right:5px;color:#f00;"
 		+ "font-size:10px;background:rgba(0,0,0,0.5);padding:2px 6px;border-radius:3px;";
-	debugLabel.textContent = "NZP MOBILE";
+	debugLabel.textContent = "NZP MOBILE | sprint L3(10) | swap btn2";
 	overlay.appendChild(debugLabel);
 })();
 
