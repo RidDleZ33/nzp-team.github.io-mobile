@@ -74,8 +74,14 @@
 		color: #fff; font-size: 9px; display: flex; align-items: center;
 		justify-content: center;
 	}
+	#nzp-grenade-btn {
+		bottom: 80px; right: 240px; width: 40px; height: 40px;
+		background: rgba(255,255,255,0.15); border-radius: 50%;
+		color: #fff; font-size: 9px; display: flex; align-items: center;
+		justify-content: center;
+	}
 	#nzp-ads-btn {
-		bottom: 150px; left: 20px; width: 50px; height: 50px;
+		bottom: 70px; left: 155px; width: 50px; height: 50px;
 		background: rgba(40,100,180,0.5); border-radius: 50%;
 		color: #fff; font-size: 10px; display: flex; align-items: center;
 		justify-content: center; border: 2px solid rgba(255,255,255,0.3);
@@ -269,7 +275,8 @@ function gotdrop(ev)
 		+ '<div class="nzp-touch-control" id="nzp-jump-btn">JUMP</div>'
 		+ '<div class="nzp-touch-control" id="nzp-crouch-btn">CRCH</div>'
 		+ '<div class="nzp-touch-control" id="nzp-reload-btn">RLD</div>'
-		+ '<div class="nzp-touch-control" id="nzp-use-btn">USE</div>';
+		+ '<div class="nzp-touch-control" id="nzp-use-btn">USE</div>'
+		+ '<div class="nzp-touch-control" id="nzp-grenade-btn">GRN</div>';
 	document.body.appendChild(overlay);
 
 	var origBegin = window.begin;
@@ -665,7 +672,8 @@ function gotdrop(ev)
 		{ id: "nzp-jump-btn",   gpBtn: 0 },
 		{ id: "nzp-crouch-btn", gpBtn: 1 },
 		{ id: "nzp-reload-btn", gpBtn: 3 },
-		{ id: "nzp-use-btn",    gpBtn: 2 }
+		{ id: "nzp-use-btn",    gpBtn: 2 },
+		{ id: "nzp-grenade-btn", gpBtn: 5 }
 	];
 
 	for (var b = 0; b < buttonDefs.length; b++) {
