@@ -74,6 +74,13 @@
 		color: #fff; font-size: 9px; display: flex; align-items: center;
 		justify-content: center;
 	}
+	#nzp-ads-btn {
+		bottom: 150px; left: 20px; width: 50px; height: 50px;
+		background: rgba(40,100,180,0.5); border-radius: 50%;
+		color: #fff; font-size: 10px; display: flex; align-items: center;
+		justify-content: center; border: 2px solid rgba(255,255,255,0.3);
+	}
+	
 	</style>
   </head>
   <body ondrop="gotdrop(event);" ondragover="event.preventDefault()">
@@ -254,7 +261,8 @@ function gotdrop(ev)
 	var overlay = document.createElement("div");
 	overlay.id = "nzp-mobile-overlay";
 	overlay.innerHTML =
-		'<div class="nzp-touch-control" id="nzp-joystick-base">'
+		'<div class="nzp-touch-control" id="nzp-ads-btn">ADS</div>'
+		+ '<div class="nzp-touch-control" id="nzp-joystick-base">'
 		+ '<div id="nzp-joystick-knob"></div></div>'
 		+ '<div class="nzp-touch-control" id="nzp-look-zone"></div>'
 		+ '<div class="nzp-touch-control" id="nzp-fire-btn">FIRE</div>'
@@ -551,6 +559,24 @@ function gotdrop(ev)
 		for (var i = 0; i < e.changedTouches.length; i++) {
 			if (endLook(e.changedTouches[i])) break;
 		}
+	}, { passive: false });
+
+		// ADS button: send mouse button 2 (right click) → +zoom
+	var adsBtn = document.getElementById("nzp-ads-btn");
+	adsBtn.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		callButton(2, true);
+		updateDebug("ads on");
+	}, { passive: false });
+	adsBtn.addEventListener("touchend", function(e) {
+		e.preventDefault();
+		callButton(2, false);
+		updateDebug("ads off");
+	}, { passive: false });
+	adsBtn.addEventListener("touchcancel", function(e) {
+		e.preventDefault();
+		callButton(2, false);
+		updateDebug("ads off");
 	}, { passive: false });
 
 	// Fire button: map to gamepad Right Trigger (button 7) → +attack (fire)
