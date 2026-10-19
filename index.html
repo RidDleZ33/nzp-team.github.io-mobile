@@ -313,9 +313,27 @@ function gotdrop(ev)
 
 	// Virtual gamepad via navigator.getGamepads() polyfill
 	// Engine polls this each frame in _emscriptenfte_polljoyevents().
-	// Standard button layout: 0=A(Fire), 1=B(Crouch), 2=X(Jump), 3=Y,
-	// 4=LB, 5=LT(Use), 6=RB, 7=RT, 8=Back, 9=Start, 10=Select, 11=Home,
-	// 12=Up, 13=Down, 14=Left, 15=Right
+	// FTE default gamepad binds (from engine source):
+	//   button 0 = A → +jump
+	//   button 1 = B → +crouch
+	//   button 2 = X → +speed (sprint)
+	//   button 3 = Y → +use
+	//   button 4 = LB → impulse 10
+	//   button 5 = LT → +button3 (grenade)
+	//   button 6 = RB → +weaponwheel
+	//   button 7 = RT → +attack (fire)
+	//   button 8 = Back
+	//   button 9 = Start → togglemenu
+	//   button 10 = L3 (left stick click) → +speed (sprint)
+	//   button 11 = R3 (right stick click)
+	//   button 12-15 = D-pad up/down/left/right
+	// Our mobile mapping:
+	//   Fire button → button 7 (RT, +attack)
+	//   Jump button → button 0 (A, +jump)
+	//   Crouch button → button 1 (B, +crouch)
+	//   Reload button → button 2 (X, +reload via weapon switch)
+	//   Use button → button 3 (Y, +use)
+	//   Double-tap joystick → button 10 (L3, +speed/sprint)
 	var virtualPad = {
 		index: 0,
 		id: "NZP Virtual Gamepad",
@@ -371,11 +389,24 @@ function gotdrop(ev)
 	}
 
 	// Joystick: map to gamepad axes 0 (strafe) and 1 (forward/back)
+	// Double-tap-hold sprint: two touchstarts within 300ms → L3 (button 10, +speed)
 	var joystick = document.getElementById("nzp-joystick-base");
 	var knob = document.getElementById("nzp-joystick-knob");
 	var joyCenter = { x: 0, y: 0 };
 	var joyActive = false;
 	var joyId = -1;
+	var lastJoyTap = 0;
+	var joyDeflected = false;
+
+	function activateSprint() {
+		setGamepadButton(10, true);
+		updateDebug("sprint L3(10) on");
+	}
+
+	function deactivateSprint() {
+		setGamepadButton(10, false);
+		updateDebug("sprint L3(10) off");
+	}
 
 	joystick.addEventListener("touchstart", function(e) {
 		e.preventDefault();
@@ -384,6 +415,14 @@ function gotdrop(ev)
 		joyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 		joyActive = true;
 		joyId = t.identifier;
+
+		// Double-tap detection
+		var now = Date.now();
+		if (now - lastJoyTap < 300) {
+			activateSprint();
+		}
+		lastJoyTap = now;
+
 		knob.style.background = "rgba(0,255,0,0.6)";
 		setTimeout(function() {
 			if (joyActive) knob.style.background = "rgba(255,255,255,0.35)";
@@ -402,6 +441,7 @@ function gotdrop(ev)
 		var dx = t.clientX - joyCenter.x;
 		var dy = t.clientY - joyCenter.y;
 		var dist = Math.sqrt(dx * dx + dy * dy);
+		joyDeflected = dist > 10;
 		if (dist > maxR) {
 			dx = dx * (maxR / dist);
 			dy = dy * (maxR / dist);
@@ -419,7 +459,9 @@ function gotdrop(ev)
 		virtualPad.axes[1] = 0;
 		joyActive = false;
 		joyId = -1;
+		joyDeflected = false;
 		knob.style.background = "rgba(255,255,255,0.35)";
+		deactivateSprint();
 		updateDebug("joy reset");
 	}
 
@@ -505,19 +547,23 @@ function gotdrop(ev)
 		}
 	}, { passive: false });
 
-	// Fire button: mousedown/mouseup while held
+	// Fire button: map to gamepad Right Trigger (button 7) → +attack (fire)
+	// FTE default: Right Trigger fires weapon
 	var fireBtn = document.getElementById("nzp-fire-btn");
 	fireBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
-		callButton(0, true);
+		setGamepadButton(7, true);
+		updateDebug("fire RT(7) on");
 	}, { passive: false });
 	fireBtn.addEventListener("touchend", function(e) {
 		e.preventDefault();
-		callButton(0, false);
+		setGamepadButton(7, false);
+		updateDebug("fire RT(7) off");
 	}, { passive: false });
 	fireBtn.addEventListener("touchcancel", function(e) {
 		e.preventDefault();
-		callButton(0, false);
+		setGamepadButton(7, false);
+		updateDebug("fire RT(7) off");
 	}, { passive: false });
 
 	// Menu click button: sends mousedown+mouseup at canvas center
@@ -548,13 +594,16 @@ function gotdrop(ev)
 		}
 	}, { passive: false });
 
-	// Action buttons: gamepad buttons
-	// Jump=X(2), Crouch=B(1), Reload=RB(9), Use=LT(5)
+	// Action buttons: map to FTE default gamepad indices
+	// Jump → button 0 (A, +jump)
+	// Crouch → button 1 (B, +crouch)
+	// Reload → button 2 (X, +reload)
+	// Use → button 3 (Y, +use)
 	var buttonDefs = [
-		{ id: "nzp-jump-btn",   gpBtn: 2 },
+		{ id: "nzp-jump-btn",   gpBtn: 0 },
 		{ id: "nzp-crouch-btn", gpBtn: 1 },
-		{ id: "nzp-reload-btn", gpBtn: 9 },
-		{ id: "nzp-use-btn",    gpBtn: 5 }
+		{ id: "nzp-reload-btn", gpBtn: 2 },
+		{ id: "nzp-use-btn",    gpBtn: 3 }
 	];
 
 	for (var b = 0; b < buttonDefs.length; b++) {
