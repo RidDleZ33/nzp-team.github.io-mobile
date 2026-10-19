@@ -711,12 +711,11 @@ function gotdrop(ev)
 		}
 		var canvas = document.getElementById("canvas");
 		if (landscape && !document.fullscreenElement && !document.webkitFullscreenElement) {
-			// Enter fullscreen
-			var target = canvas || document.documentElement;
-			if (target.requestFullscreen) {
-				target.requestFullscreen().catch(function() {});
-			} else if (target.webkitRequestFullscreen) {
-				target.webkitRequestFullscreen();
+			// Enter fullscreen on documentElement so overlay stays visible
+			if (document.documentElement.requestFullscreen) {
+				document.documentElement.requestFullscreen().catch(function() {});
+			} else if (document.documentElement.webkitRequestFullscreen) {
+				document.documentElement.webkitRequestFullscreen();
 			}
 			inLandscapeFullscreen = true;
 		} else if (!landscape && inLandscapeFullscreen) {
