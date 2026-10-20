@@ -161,24 +161,25 @@ var Module = {
 		}
 	],
 };
-var original_begin = begin;
-begin = function() {
-	original_begin();
-	// Hook into engine initialization to set engineReady
-	var origOnInit = Module.onRuntimeInitialized;
-	Module.onRuntimeInitialized = function() {
-		if (origOnInit) origOnInit();
-		engineReady = true;
-		updateDebug("engine ready");
-		if (Module.setStatus) Module.setStatus('');
-		if (typeof document.getElementById('dropzone').hidden === 'boolean') {
-			document.getElementById('dropzone').hidden = true;
-		}
-		if (typeof document.getElementById('begin').hidden === 'boolean') {
-			document.getElementById('begin').hidden = true;
-		}
-	};
-};
+function begin()
+{
+	if (Module.began)
+		return;
+	Module.began = true;
+	document.getElementById('dropzone').hidden = true;
+	document.getElementById('begin').hidden = true;
+	Module.setStatus('Downloading...');
+
+	// make a script. do it the hard way for the error.
+	var s = document.createElement('script');
+	// set it up
+	s.setAttribute('src',"ftewebgl.js");
+	s.setAttribute('type',"text/javascript");
+	s.setAttribute('charset',"utf-8");
+	s.addEventListener('error', function() {alert("Oh noes! we got an error!"); Module.setStatus("Unable to download engine javascript");}, false);
+	// add to DOM
+	document.head.appendChild(s);
+}
 
 //stuff to facilitate our drag+drop filesystem support
 function fixupfilepath(fname, path)
