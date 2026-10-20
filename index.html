@@ -521,6 +521,15 @@ function gotdrop(ev)
 	}, { passive: false });
 
 	// Look zone: distinguish tap (menu click) from drag (camera look)
+	// Look zone variables (required by look zone handlers below)
+	var lookZone = document.getElementById("nzp-look-zone");
+	var lookId = -1;
+	var lastLook = { x: 0, y: 0 };
+	var lookStart = { x: 0, y: 0 };
+	var lookDragged = false;
+	var lookScale = 1.5;
+	var lookZoneScale = 3.0;
+
 	// Full-screen tap layer for menu interaction (captures taps everywhere)
 	var tapLayer = document.createElement("div");
 	tapLayer.id = "nzp-tap-layer";
