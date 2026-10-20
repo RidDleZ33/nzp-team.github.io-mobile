@@ -92,18 +92,7 @@
 		color: #fff; font-size: 10px; display: flex; align-items: center;
 		justify-content: center; border: 2px solid rgba(255,255,255,0.3);
 	}
-	/* Right joystick: appears when ADS is held for scoped movement */
-	#nzp-joystick-base-right {
-		bottom: 20px; right: 20px; width: 120px; height: 120px;
-		background: rgba(255,255,255,0.1); border-radius: 50%;
-		display: none;
-	}
-	#nzp-joystick-knob-right {
-		position: absolute; top: 35px; left: 35px; width: 50px; height: 50px;
-		background: rgba(255,255,255,0.35); border-radius: 50%;
-		transform: translate(0,0);
-	}
-	
+
 	</style>
   </head>
   <body ondrop="gotdrop(event);" ondragover="event.preventDefault()">
@@ -294,9 +283,7 @@ function gotdrop(ev)
 		+ '<div class="nzp-touch-control" id="nzp-crouch-btn">CRCH</div>'
 		+ '<div class="nzp-touch-control" id="nzp-reload-btn">RLD</div>'
 		+ '<div class="nzp-touch-control" id="nzp-use-btn">USE</div>'
-		+ '<div class="nzp-touch-control" id="nzp-grenade-btn">GRN</div>'
-		+ '<div class="nzp-touch-control" id="nzp-joystick-base-right">'
-		+ '<div id="nzp-joystick-knob-right"></div></div>';
+		+ '<div class="nzp-touch-control" id="nzp-grenade-btn">GRN</div>';
 	document.body.appendChild(overlay);
 
 	var origBegin = window.begin;
@@ -708,10 +695,14 @@ function gotdrop(ev)
 		lastLook = { x: t.clientX, y: t.clientY };
 		lookStart = { x: t.clientX, y: t.clientY };
 		lookDragged = false;
-		// Send absolute position so reticle appears under finger (fixes menu alignment)
-		var cc = touchToCanvasCoords(t);
-		sendMousePosition(cc.x, cc.y);
-		updateDebug("touch " + t.clientX + "," + t.clientY + " -> " + cc.x.toFixed(1) + "," + cc.y.toFixed(1));
+		if (adsActive) {
+			updateDebug("ads move start");
+		} else {
+			// Send absolute position so reticle appears under finger (fixes menu alignment)
+			var cc = touchToCanvasCoords(t);
+			sendMousePosition(cc.x, cc.y);
+			updateDebug("touch " + t.clientX + "," + t.clientY + " -> " + cc.x.toFixed(1) + "," + cc.y.toFixed(1));
+		}
 	}, { passive: false });
 
 	lookZone.addEventListener("touchmove", function(e) {
@@ -719,21 +710,36 @@ function gotdrop(ev)
 		for (var i = 0; i < e.changedTouches.length; i++) {
 			var t = e.changedTouches[i];
 			if (t.identifier !== lookId) continue;
-			// Detect if this is a drag (not just tap jitter)
-			var distFromStart = Math.sqrt(
-				(t.clientX - lookStart.x) * (t.clientX - lookStart.x) +
-				(t.clientY - lookStart.y) * (t.clientY - lookStart.y));
-			if (distFromStart > tapThreshold) {
-				lookDragged = true;
-			}
-			// Send absolute position for reticle tracking
-			var cc = touchToCanvasCoords(t);
-			sendMousePosition(cc.x, cc.y);
-			// Also send deltas for look sensitivity during gameplay
-			if (lookDragged) {
-				var dx = (t.clientX - lastLook.x) * lookZoneScale;
-				var dy = (t.clientY - lastLook.y) * lookZoneScale;
-				callMouseMove(dx, dy);
+			if (adsActive) {
+				// ADS: right side sends movement (strafe/forward)
+				var dx = (t.clientX - lastLook.x) * 3.0;
+				var dy = (t.clientY - lastLook.y) * 3.0;
+				virtualPad.axes[0] = dx / 40;
+				virtualPad.axes[1] = dy / 40;
+				// Clamp
+				if (virtualPad.axes[0] > 1) virtualPad.axes[0] = 1;
+				if (virtualPad.axes[0] < -1) virtualPad.axes[0] = -1;
+				if (virtualPad.axes[1] > 1) virtualPad.axes[1] = 1;
+				if (virtualPad.axes[1] < -1) virtualPad.axes[1] = -1;
+				updateDebug("ads move " + virtualPad.axes[0].toFixed(2) + "," + virtualPad.axes[1].toFixed(2));
+			} else {
+				// Normal: look zone sends look deltas
+				// Detect if this is a drag (not just tap jitter)
+				var distFromStart = Math.sqrt(
+					(t.clientX - lookStart.x) * (t.clientX - lookStart.x) +
+					(t.clientY - lookStart.y) * (t.clientY - lookStart.y));
+				if (distFromStart > tapThreshold) {
+					lookDragged = true;
+				}
+				// Send absolute position for reticle tracking
+				var cc = touchToCanvasCoords(t);
+				sendMousePosition(cc.x, cc.y);
+				// Also send deltas for look sensitivity during gameplay
+				if (lookDragged) {
+					var dx = (t.clientX - lastLook.x) * lookZoneScale;
+					var dy = (t.clientY - lastLook.y) * lookZoneScale;
+					callMouseMove(dx, dy);
+				}
 			}
 			lastLook = { x: t.clientX, y: t.clientY };
 		}
@@ -742,8 +748,20 @@ function gotdrop(ev)
 	function endLook(t) {
 		if (t.identifier !== lookId) return false;
 		lookId = -1;
-		// If not dragged significantly, send click events for menu interaction
-		if (!lookDragged) {
+		if (adsActive) {
+			// ADS: reset movement axes on release
+			virtualPad.axes[0] = 0;
+			virtualPad.axes[1] = 0;
+			// If not dragged significantly, fire
+			if (!lookDragged) {
+				setGamepadButton(7, true);
+				setGamepadButton(7, false);
+				updateDebug("ads fire");
+			} else {
+				updateDebug("ads move stop");
+			}
+		} else if (!lookDragged) {
+			// If not dragged significantly, send click events for menu interaction
 			callButton(0, true);
 			callButton(0, false);
 		}
@@ -769,26 +787,11 @@ function gotdrop(ev)
 	var adsTouchId = -1;
 	var adsLast = { x: 0, y: 0 };
 	var adsMoved = false;
-
-	// Right joystick for ADS movement
-	var rightJoy = document.getElementById("nzp-joystick-base-right");
-	var rightKnob = document.getElementById("nzp-joystick-knob-right");
-	var rightJoyCenter = { x: 0, y: 0 };
-	var rightJoyActive = false;
-	var rightJoyId = -1;
+	var adsActive = false;
 
 	// Right-side action buttons to hide during ADS
 	var rightButtons = ["nzp-fire-btn", "nzp-jump-btn", "nzp-crouch-btn", "nzp-reload-btn", "nzp-use-btn", "nzp-grenade-btn"];
 
-	function showRightJoy() {
-		rightJoy.style.display = "block";
-	}
-	function hideRightJoy() {
-		rightJoy.style.display = "none";
-		rightJoyActive = false;
-		rightJoyId = -1;
-		rightKnob.style.transform = "translate(0,0)";
-	}
 	function hideRightButtons() {
 		for (var i = 0; i < rightButtons.length; i++) {
 			document.getElementById(rightButtons[i]).style.display = "none";
@@ -806,8 +809,8 @@ function gotdrop(ev)
 		adsTouchId = t.identifier;
 		adsLast = { x: t.clientX, y: t.clientY };
 		adsMoved = false;
+		adsActive = true;
 		callButton(2, true);
-		showRightJoy();
 		hideRightButtons();
 		updateDebug("ads on");
 	}, { passive: false });
@@ -828,8 +831,8 @@ function gotdrop(ev)
 	function adsRelease(t) {
 		if (t.identifier !== adsTouchId) return false;
 		adsTouchId = -1;
+		adsActive = false;
 		callButton(2, false);
-		hideRightJoy();
 		showRightButtons();
 		updateDebug("ads off" + (adsMoved ? " (aimed)" : ""));
 		return true;
@@ -844,68 +847,6 @@ function gotdrop(ev)
 		e.preventDefault();
 		for (var i = 0; i < e.changedTouches.length; i++) {
 			if (adsRelease(e.changedTouches[i])) break;
-		}
-	}, { passive: false });
-
-	// Right joystick: same axes as left joystick, used during ADS
-	rightJoy.addEventListener("touchstart", function(e) {
-		e.preventDefault();
-		var t = e.changedTouches[0];
-		var r = rightJoy.getBoundingClientRect();
-		rightJoyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-		rightJoyActive = true;
-		rightJoyId = t.identifier;
-		rightKnob.style.background = "rgba(0,255,0,0.6)";
-	}, { passive: false });
-
-	rightJoy.addEventListener("touchmove", function(e) {
-		e.preventDefault();
-		if (!rightJoyActive) return;
-		var t = null;
-		for (var i = 0; i < e.changedTouches.length; i++) {
-			if (e.changedTouches[i].identifier === rightJoyId) { t = e.changedTouches[i]; break; }
-		}
-		if (!t) return;
-		var maxR = rightJoy.clientWidth / 2;
-		var dx = t.clientX - rightJoyCenter.x;
-		var dy = t.clientY - rightJoyCenter.y;
-		var dist = Math.sqrt(dx * dx + dy * dy);
-		if (dist > maxR) {
-			dx = dx * (maxR / dist);
-			dy = dy * (maxR / dist);
-		}
-		rightKnob.style.transform = "translate(" + dx + "px," + dy + "px)";
-		virtualPad.axes[0] = dx / maxR;
-		virtualPad.axes[1] = dy / maxR;
-	}, { passive: false });
-
-	function resetRightJoy() {
-		if (!rightJoyActive) return;
-		rightKnob.style.transform = "translate(0,0)";
-		virtualPad.axes[0] = 0;
-		virtualPad.axes[1] = 0;
-		rightJoyActive = false;
-		rightJoyId = -1;
-		rightKnob.style.background = "rgba(255,255,255,0.35)";
-	}
-
-	rightJoy.addEventListener("touchend", function(e) {
-		e.preventDefault();
-		for (var i = 0; i < e.changedTouches.length; i++) {
-			if (e.changedTouches[i].identifier === rightJoyId) {
-				resetRightJoy();
-				break;
-			}
-		}
-	}, { passive: false });
-
-	rightJoy.addEventListener("touchcancel", function(e) {
-		e.preventDefault();
-		for (var i = 0; i < e.changedTouches.length; i++) {
-			if (e.changedTouches[i].identifier === rightJoyId) {
-				resetRightJoy();
-				break;
-			}
 		}
 	}, { passive: false });
 
