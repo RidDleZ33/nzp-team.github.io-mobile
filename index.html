@@ -521,21 +521,7 @@ function gotdrop(ev)
 	}, { passive: false });
 
 	// Look zone: distinguish tap (menu click) from drag (camera look)
-	var lookZone = document.getElementById("nzp-look-zone");
-	var lookId = -1;
-	var lastLook = { x: 0, y: 0 };
-	var lookStart = { x: 0, y: 0 };
-	var lookDragged = false;
-	var lookScale = 1.5;
-	var lookZoneScale = 3.0;
-	var tapThreshold = 8; // pixels
-
-	// Cache canvas scale for touch coordinate conversion
-	var canvasScale = { x: 1, y: 1 };
-	var canvasOffset = { x: 0, y: 0 };
-
 	// Full-screen tap layer for menu interaction (captures taps everywhere)
-	// Must be below overlay (z-index 9999) but above canvas
 	var tapLayer = document.createElement("div");
 	tapLayer.id = "nzp-tap-layer";
 	tapLayer.style.cssText = "position:fixed;inset:0;z-index:9990;pointer-events:auto;touch-action:none;";
@@ -545,6 +531,53 @@ function gotdrop(ev)
 	var lastTap = { x: 0, y: 0 };
 	var tapStart = { x: 0, y: 0 };
 	var tapDragged = false;
+	var tapThreshold = 8; // pixels
+
+	// Cache canvas scale for touch coordinate conversion
+	var canvasScale = { x: 1, y: 1 };
+	var canvasOffset = { x: 0, y: 0 };
+
+	// Recalculate canvas scale when viewport changes (fullscreen, orientation)
+	function updateCanvasScale() {
+		var canvas = document.getElementById("canvas");
+		if (!canvas) return;
+		var rect = canvas.getBoundingClientRect();
+		if (rect.width > 0 && rect.height > 0) {
+			canvasScale.x = canvas.width / rect.width;
+			canvasScale.y = canvas.height / rect.height;
+			canvasOffset.x = rect.left;
+			canvasOffset.y = rect.top;
+			updateDebug("scale " + canvasScale.x.toFixed(2) + "," + canvasScale.y.toFixed(2) + " off " + canvasOffset.x + "," + canvasOffset.y);
+		}
+	}
+
+	// Recalculate on fullscreen/orientation changes
+	document.addEventListener("fullscreenchange", function() { setTimeout(updateCanvasScale, 100); });
+	document.addEventListener("webkitfullscreenchange", function() { setTimeout(updateCanvasScale, 100); });
+	window.addEventListener("orientationchange", function() { setTimeout(updateCanvasScale, 100); });
+	window.addEventListener("resize", function() { setTimeout(updateCanvasScale, 100); });
+	// Initial scale calculation
+	setTimeout(updateCanvasScale, 500);
+
+	// Convert touch client coords to canvas-relative coords (scaled for CSS/devicePixelRatio)
+	// Uses cached scale for performance, recalculates if scale is stale
+	function touchToCanvasCoords(t) {
+		var canvas = document.getElementById("canvas");
+		var rect = canvas.getBoundingClientRect();
+		// Recalculate scale if viewport changed since last update
+		if (Math.abs(rect.left - canvasOffset.x) > 1 || Math.abs(rect.top - canvasOffset.y) > 1) {
+			updateCanvasScale();
+		}
+		var x = (t.clientX - rect.left) * (canvas.width / rect.width);
+		var y = (t.clientY - rect.top) * (canvas.height / rect.height);
+		return { x: x, y: y };
+	}
+
+	// Send absolute mouse position to engine (pointerlock=true means absolute coords)
+	function sendMousePosition(x, y) {
+		if (!engineReady) return;
+		window.getWasmTableEntry(window.FTEC.evcb.mouse)(0, true, x, y, 0, 0);
+	}
 
 	function sendTapClick(t) {
 		var cc = touchToCanvasCoords(t);
