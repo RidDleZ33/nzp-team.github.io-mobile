@@ -534,6 +534,76 @@ function gotdrop(ev)
 	var canvasScale = { x: 1, y: 1 };
 	var canvasOffset = { x: 0, y: 0 };
 
+	// Full-screen tap layer for menu interaction (captures taps everywhere)
+	// Must be below overlay (z-index 9999) but above canvas
+	var tapLayer = document.createElement("div");
+	tapLayer.id = "nzp-tap-layer";
+	tapLayer.style.cssText = "position:fixed;inset:0;z-index:9990;pointer-events:auto;touch-action:none;";
+	document.body.appendChild(tapLayer);
+
+	var tapId = -1;
+	var lastTap = { x: 0, y: 0 };
+	var tapStart = { x: 0, y: 0 };
+	var tapDragged = false;
+
+	function sendTapClick(t) {
+		var cc = touchToCanvasCoords(t);
+		sendMousePosition(cc.x, cc.y);
+		callButton(0, true);
+		callButton(0, false);
+		updateDebug("tap " + t.clientX + "," + t.clientY + " -> " + cc.x.toFixed(1) + "," + cc.y.toFixed(1));
+	}
+
+	tapLayer.addEventListener("touchstart", function(e) {
+		var t = e.changedTouches[0];
+		tapId = t.identifier;
+		lastTap = { x: t.clientX, y: t.clientY };
+		tapStart = { x: t.clientX, y: t.clientY };
+		tapDragged = false;
+	}, { passive: false });
+
+	tapLayer.addEventListener("touchmove", function(e) {
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			var t = e.changedTouches[i];
+			if (t.identifier !== tapId) continue;
+			var distFromStart = Math.sqrt(
+				(t.clientX - tapStart.x) * (t.clientX - tapStart.x) +
+				(t.clientY - tapStart.y) * (t.clientY - tapStart.y));
+			if (distFromStart > tapThreshold) {
+				tapDragged = true;
+			}
+			var cc = touchToCanvasCoords(t);
+			sendMousePosition(cc.x, cc.y);
+			if (tapDragged) {
+				var dx = (t.clientX - lastTap.x) * lookZoneScale;
+				var dy = (t.clientY - lastTap.y) * lookZoneScale;
+				callMouseMove(dx, dy);
+			}
+			lastTap = { x: t.clientX, y: t.clientY };
+		}
+	}, { passive: false });
+
+	function endTap(t) {
+		if (t.identifier !== tapId) return false;
+		tapId = -1;
+		if (!tapDragged) {
+			sendTapClick(t);
+		}
+		return true;
+	}
+
+	tapLayer.addEventListener("touchend", function(e) {
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (endTap(e.changedTouches[i])) break;
+		}
+	}, { passive: false });
+
+	tapLayer.addEventListener("touchcancel", function(e) {
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (endTap(e.changedTouches[i])) break;
+		}
+	}, { passive: false });
+
 	// Recalculate canvas scale when viewport changes (fullscreen, orientation)
 	function updateCanvasScale() {
 		var canvas = document.getElementById("canvas");
