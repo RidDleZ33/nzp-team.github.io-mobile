@@ -985,11 +985,9 @@ function gotdrop(ev)
 	function sendCharToEngine(ch) {
 		if (!engineReady || !ch) return;
 		var code = ch.charCodeAt(0);
-		var keyCode = code;
-		if (code >= 65 && code <= 90) keyCode = code + 32; // uppercase uses lowercase key code
 		var evcbKey = window.FTEC.evcb.key;
-		getWasmTableEntry(evcbKey)(0, true, keyCode, code);
-		getWasmTableEntry(evcbKey)(0, false, keyCode, 0);
+		getWasmTableEntry(evcbKey)(0, true, 0, code);
+		getWasmTableEntry(evcbKey)(0, false, 0, 0);
 	}
 
 	// Track how many chars have been sent to avoid re-sending on input events
