@@ -983,32 +983,13 @@ function gotdrop(ev)
 	}
 
 	function sendCharToEngine(ch) {
-		if (!engineReady) return;
+		if (!engineReady || !ch) return;
 		var code = ch.charCodeAt(0);
-		// Map ASCII to FTE key codes (same as ASCII for printable chars)
-		// For special chars, use the code directly
+		var keyCode = code;
+		if (code >= 65 && code <= 90) keyCode = code + 32; // uppercase uses lowercase key code
 		var evcbKey = window.FTEC.evcb.key;
-		if (code >= 65 && code <= 90) {
-			// Uppercase: send shift + letter with actual uppercase codepoint
-			getWasmTableEntry(evcbKey)(0, true, 16, 0); // shift down
-			getWasmTableEntry(evcbKey)(0, true, code + 32, code); // letter down (lowercase keyCode, uppercase codepoint)
-			getWasmTableEntry(evcbKey)(0, false, code + 32, 0); // letter up
-			getWasmTableEntry(evcbKey)(0, false, 16, 0); // shift up
-		} else if (code >= 97 && code <= 122) {
-			getWasmTableEntry(evcbKey)(0, true, code, code);
-			getWasmTableEntry(evcbKey)(0, false, code, 0);
-		} else if (code >= 48 && code <= 57) {
-			getWasmTableEntry(evcbKey)(0, true, code, code);
-			getWasmTableEntry(evcbKey)(0, false, code, 0);
-		} else if (code === 32) {
-			// Space
-			getWasmTableEntry(evcbKey)(0, true, 32, 32);
-			getWasmTableEntry(evcbKey)(0, false, 32, 0);
-		} else {
-			// Punctuation/symbols: send code directly with codepoint
-			getWasmTableEntry(evcbKey)(0, true, code, code);
-			getWasmTableEntry(evcbKey)(0, false, code, 0);
-		}
+		getWasmTableEntry(evcbKey)(0, true, keyCode, code);
+		getWasmTableEntry(evcbKey)(0, false, keyCode, 0);
 	}
 
 	// Track how many chars have been sent to avoid re-sending on input events
