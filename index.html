@@ -1011,112 +1011,43 @@ function gotdrop(ev)
 		}
 	}
 
-	// Track how much text has been sent to avoid duplicates on input events
+	// Track how many chars have been sent to avoid re-sending on input events
 	var keyboardCharsSent = 0;
 
-	// Send remaining text that hasn't been forwarded to the engine yet
-	function sendRemainingKeyboardText() {
-		var val = keyboardInput.value;
-		if (keyboardCharsSent < val.length) {
+	keyboardInput.addEventListener("input", function(e) {
+		var val = e.target.value;
+		if (val.length > keyboardCharsSent) {
+			// New characters typed: send only the new ones
 			for (var i = keyboardCharsSent; i < val.length; i++) {
 				sendCharToEngine(val[i]);
 			}
-			keyboardCharsSent = val.length;
-		}
-	}
-
-	// Handle input events: send only new characters to the engine
-	keyboardInput.addEventListener("input", function(e) {
-		var val = e.target.value;
-		// Send only characters added since last input event
-		if (keyboardCharsSent < val.length) {
-			var newChars = val.substring(keyboardCharsSent);
-			for (var i = 0; i < newChars.length; i++) {
-				sendCharToEngine(newChars[i]);
-			}
-			keyboardCharsSent = val.length;
-		}
-		updateDebug("kb: typed " + val);
-	});
-
-	// Handle text deletion (user backspaces in the input field)
-	keyboardInput.addEventListener("input", function(e) {
-		var val = e.target.value;
-		if (val.length < keyboardCharsSent) {
+		} else if (val.length < keyboardCharsSent) {
+			// Text deleted: send backspace for each char removed
 			var deleted = keyboardCharsSent - val.length;
-			// Send backspace key for each deleted character
 			for (var i = 0; i < deleted; i++) {
 				getWasmTableEntry(window.FTEC.evcb.key)(0, true, 8, 0);
-				setTimeout(function() {
-					getWasmTableEntry(window.FTEC.evcb.key)(0, false, 8, 0);
-				}, 50);
+				getWasmTableEntry(window.FTEC.evcb.key)(0, false, 8, 0);
 			}
-			keyboardCharsSent = val.length;
 		}
+		keyboardCharsSent = val.length;
 	});
 
-	// Handle Enter key (submit console command)
 	keyboardInput.addEventListener("keydown", function(e) {
 		if (e.key === "Enter") {
-			e.preventDefault();
-			// Send Enter key to engine
 			getWasmTableEntry(window.FTEC.evcb.key)(0, true, 13, 0);
-			setTimeout(function() {
-				getWasmTableEntry(window.FTEC.evcb.key)(0, false, 13, 0);
-			}, 50);
-			updateDebug("kb: enter");
+			getWasmTableEntry(window.FTEC.evcb.key)(0, false, 13, 0);
 		}
 	});
 
-	// Handle backspace
-	keyboardInput.addEventListener("keyup", function(e) {
-		if (e.key === "Backspace") {
-			getWasmTableEntry(window.FTEC.evcb.key)(0, true, 8, 0);
-			setTimeout(function() {
-				getWasmTableEntry(window.FTEC.evcb.key)(0, false, 8, 0);
-			}, 50);
-			updateDebug("kb: backspace");
-		}
-	});
-
-	// Done button: send any remaining text, then close
 	document.getElementById("nzp-keyboard-done").addEventListener("click", function() {
-		sendRemainingKeyboardText();
 		closeKeyboard();
 	});
-
-	// Cancel button
 	document.getElementById("nzp-keyboard-cancel").addEventListener("click", function() {
 		closeKeyboard();
 	});
-
-	// Tap outside to dismiss
 	keyboardOverlay.addEventListener("click", function(e) {
-		if (e.target === keyboardOverlay) {
-			closeKeyboard();
-		}
+		if (e.target === keyboardOverlay) closeKeyboard();
 	});
-
-	// CONSOLE button: open console and keyboard
-	var consoleBtn = document.createElement("div");
-	consoleBtn.className = "nzp-touch-control";
-	consoleBtn.id = "nzp-console-btn";
-	consoleBtn.style.cssText = "bottom: 30px; left: 180px; width: 50px; height: 50px;"
-		+ " background: rgba(40,80,120,0.5); border-radius: 50%; color: #fff;"
-		+ " font-size: 9px; display: flex; align-items: center; justify-content: center;"
-		+ " border: 2px solid rgba(255,255,255,0.3);";
-	consoleBtn.textContent = "CONSOLE";
-	overlay.appendChild(consoleBtn);
-
-	consoleBtn.addEventListener("touchstart", function(e) {
-		e.preventDefault();
-		// Toggle console with backtick key (96)
-		getWasmTableEntry(window.FTEC.evcb.key)(0, true, 96, 0);
-		setTimeout(function() {
-			getWasmTableEntry(window.FTEC.evcb.key)(0, false, 96, 0);
-		}, 50);
-		updateDebug("console toggle");
-	}, { passive: false });
 
 	// KEYBOARD button: show soft keyboard for menu text fields
 	var kbBtn = document.createElement("div");
@@ -1128,6 +1059,22 @@ function gotdrop(ev)
 		+ " border: 2px solid rgba(255,255,255,0.3);";
 	kbBtn.textContent = "KB";
 	overlay.appendChild(kbBtn);
+
+	// Check if game is in a menu (paused or not actively playing)
+	function isGameMenu() {
+		if (!engineReady) return true;
+		try {
+			// Check FTE's viewentity cl_paused or similar state
+			return window.FTEC ? window.FTEC.viewentity === null : true;
+		} catch(e) {
+			return true;
+		}
+	}
+
+	// Periodically check menu state to show/hide KB button
+	setInterval(function() {
+		kbBtn.style.display = isGameMenu() ? "flex" : "none";
+	}, 500);
 
 	kbBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
@@ -1142,7 +1089,7 @@ function gotdrop(ev)
 	var debugLabel = document.createElement("div");
 	debugLabel.style.cssText = "position:absolute;top:5px;right:5px;color:#f00;"
 		+ "font-size:10px;background:rgba(0,0,0,0.5);padding:2px 6px;border-radius:3px;";
-	debugLabel.textContent = "NZP MOBILE | KB+CONSOLE";
+	debugLabel.textContent = "NZP MOBILE";
 	overlay.appendChild(debugLabel);
 })();
 
