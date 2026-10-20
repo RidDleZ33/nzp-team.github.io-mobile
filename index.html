@@ -87,10 +87,21 @@
 		justify-content: center; border: 2px solid rgba(255,255,255,0.3);
 	}
 	#nzp-ads-btn {
-		bottom: 70px; left: 155px; width: 50px; height: 50px;
+		bottom: 127px; left: 127px; width: 50px; height: 50px;
 		background: rgba(40,100,180,0.5); border-radius: 50%;
 		color: #fff; font-size: 10px; display: flex; align-items: center;
 		justify-content: center; border: 2px solid rgba(255,255,255,0.3);
+	}
+	/* Right joystick: appears when ADS is held for scoped movement */
+	#nzp-joystick-base-right {
+		bottom: 20px; right: 20px; width: 120px; height: 120px;
+		background: rgba(255,255,255,0.1); border-radius: 50%;
+		display: none;
+	}
+	#nzp-joystick-knob-right {
+		position: absolute; top: 35px; left: 35px; width: 50px; height: 50px;
+		background: rgba(255,255,255,0.35); border-radius: 50%;
+		transform: translate(0,0);
 	}
 	
 	</style>
@@ -283,7 +294,9 @@ function gotdrop(ev)
 		+ '<div class="nzp-touch-control" id="nzp-crouch-btn">CRCH</div>'
 		+ '<div class="nzp-touch-control" id="nzp-reload-btn">RLD</div>'
 		+ '<div class="nzp-touch-control" id="nzp-use-btn">USE</div>'
-		+ '<div class="nzp-touch-control" id="nzp-grenade-btn">GRN</div>';
+		+ '<div class="nzp-touch-control" id="nzp-grenade-btn">GRN</div>'
+		+ '<div class="nzp-touch-control" id="nzp-joystick-base-right">'
+		+ '<div id="nzp-joystick-knob-right"></div></div>';
 	document.body.appendChild(overlay);
 
 	var origBegin = window.begin;
@@ -756,6 +769,37 @@ function gotdrop(ev)
 	var adsTouchId = -1;
 	var adsLast = { x: 0, y: 0 };
 	var adsMoved = false;
+
+	// Right joystick for ADS movement
+	var rightJoy = document.getElementById("nzp-joystick-base-right");
+	var rightKnob = document.getElementById("nzp-joystick-knob-right");
+	var rightJoyCenter = { x: 0, y: 0 };
+	var rightJoyActive = false;
+	var rightJoyId = -1;
+
+	// Right-side action buttons to hide during ADS
+	var rightButtons = ["nzp-fire-btn", "nzp-jump-btn", "nzp-crouch-btn", "nzp-reload-btn", "nzp-use-btn", "nzp-grenade-btn"];
+
+	function showRightJoy() {
+		rightJoy.style.display = "block";
+	}
+	function hideRightJoy() {
+		rightJoy.style.display = "none";
+		rightJoyActive = false;
+		rightJoyId = -1;
+		rightKnob.style.transform = "translate(0,0)";
+	}
+	function hideRightButtons() {
+		for (var i = 0; i < rightButtons.length; i++) {
+			document.getElementById(rightButtons[i]).style.display = "none";
+		}
+	}
+	function showRightButtons() {
+		for (var i = 0; i < rightButtons.length; i++) {
+			document.getElementById(rightButtons[i]).style.display = "";
+		}
+	}
+
 	adsBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
 		var t = e.changedTouches[0];
@@ -763,6 +807,8 @@ function gotdrop(ev)
 		adsLast = { x: t.clientX, y: t.clientY };
 		adsMoved = false;
 		callButton(2, true);
+		showRightJoy();
+		hideRightButtons();
 		updateDebug("ads on");
 	}, { passive: false });
 	adsBtn.addEventListener("touchmove", function(e) {
@@ -783,6 +829,8 @@ function gotdrop(ev)
 		if (t.identifier !== adsTouchId) return false;
 		adsTouchId = -1;
 		callButton(2, false);
+		hideRightJoy();
+		showRightButtons();
 		updateDebug("ads off" + (adsMoved ? " (aimed)" : ""));
 		return true;
 	}
@@ -796,6 +844,68 @@ function gotdrop(ev)
 		e.preventDefault();
 		for (var i = 0; i < e.changedTouches.length; i++) {
 			if (adsRelease(e.changedTouches[i])) break;
+		}
+	}, { passive: false });
+
+	// Right joystick: same axes as left joystick, used during ADS
+	rightJoy.addEventListener("touchstart", function(e) {
+		e.preventDefault();
+		var t = e.changedTouches[0];
+		var r = rightJoy.getBoundingClientRect();
+		rightJoyCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+		rightJoyActive = true;
+		rightJoyId = t.identifier;
+		rightKnob.style.background = "rgba(0,255,0,0.6)";
+	}, { passive: false });
+
+	rightJoy.addEventListener("touchmove", function(e) {
+		e.preventDefault();
+		if (!rightJoyActive) return;
+		var t = null;
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === rightJoyId) { t = e.changedTouches[i]; break; }
+		}
+		if (!t) return;
+		var maxR = rightJoy.clientWidth / 2;
+		var dx = t.clientX - rightJoyCenter.x;
+		var dy = t.clientY - rightJoyCenter.y;
+		var dist = Math.sqrt(dx * dx + dy * dy);
+		if (dist > maxR) {
+			dx = dx * (maxR / dist);
+			dy = dy * (maxR / dist);
+		}
+		rightKnob.style.transform = "translate(" + dx + "px," + dy + "px)";
+		virtualPad.axes[0] = dx / maxR;
+		virtualPad.axes[1] = dy / maxR;
+	}, { passive: false });
+
+	function resetRightJoy() {
+		if (!rightJoyActive) return;
+		rightKnob.style.transform = "translate(0,0)";
+		virtualPad.axes[0] = 0;
+		virtualPad.axes[1] = 0;
+		rightJoyActive = false;
+		rightJoyId = -1;
+		rightKnob.style.background = "rgba(255,255,255,0.35)";
+	}
+
+	rightJoy.addEventListener("touchend", function(e) {
+		e.preventDefault();
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === rightJoyId) {
+				resetRightJoy();
+				break;
+			}
+		}
+	}, { passive: false });
+
+	rightJoy.addEventListener("touchcancel", function(e) {
+		e.preventDefault();
+		for (var i = 0; i < e.changedTouches.length; i++) {
+			if (e.changedTouches[i].identifier === rightJoyId) {
+				resetRightJoy();
+				break;
+			}
 		}
 	}, { passive: false });
 
@@ -1041,7 +1151,7 @@ function gotdrop(ev)
 	var kbBtn = document.createElement("div");
 	kbBtn.className = "nzp-touch-control";
 	kbBtn.id = "nzp-kb-btn";
-	kbBtn.style.cssText = "bottom: 30px; left: 160px; width: 50px; height: 50px;"
+	kbBtn.style.cssText = "bottom: 30px; left: 160px; width: 40px; height: 40px;"
 		+ " background: rgba(120,80,40,0.5); border-radius: 50%; color: #fff;"
 		+ " font-size: 9px; display: flex; align-items: center; justify-content: center;"
 		+ " border: 2px solid rgba(255,255,255,0.3);";
