@@ -530,10 +530,41 @@ function gotdrop(ev)
 	var lookZoneScale = 3.0;
 	var tapThreshold = 8; // pixels
 
+	// Cache canvas scale for touch coordinate conversion
+	var canvasScale = { x: 1, y: 1 };
+	var canvasOffset = { x: 0, y: 0 };
+
+	// Recalculate canvas scale when viewport changes (fullscreen, orientation)
+	function updateCanvasScale() {
+		var canvas = document.getElementById("canvas");
+		if (!canvas) return;
+		var rect = canvas.getBoundingClientRect();
+		if (rect.width > 0 && rect.height > 0) {
+			canvasScale.x = canvas.width / rect.width;
+			canvasScale.y = canvas.height / rect.height;
+			canvasOffset.x = rect.left;
+			canvasOffset.y = rect.top;
+			updateDebug("scale " + canvasScale.x.toFixed(2) + "," + canvasScale.y.toFixed(2) + " off " + canvasOffset.x + "," + canvasOffset.y);
+		}
+	}
+
+	// Recalculate on fullscreen/orientation changes
+	document.addEventListener("fullscreenchange", function() { setTimeout(updateCanvasScale, 100); });
+	document.addEventListener("webkitfullscreenchange", function() { setTimeout(updateCanvasScale, 100); });
+	window.addEventListener("orientationchange", function() { setTimeout(updateCanvasScale, 100); });
+	window.addEventListener("resize", function() { setTimeout(updateCanvasScale, 100); });
+	// Initial scale calculation
+	setTimeout(updateCanvasScale, 500);
+
 	// Convert touch client coords to canvas-relative coords (scaled for CSS/devicePixelRatio)
+	// Uses cached scale for performance, recalculates if scale is stale
 	function touchToCanvasCoords(t) {
 		var canvas = document.getElementById("canvas");
 		var rect = canvas.getBoundingClientRect();
+		// Recalculate scale if viewport changed since last update
+		if (Math.abs(rect.left - canvasOffset.x) > 1 || Math.abs(rect.top - canvasOffset.y) > 1) {
+			updateCanvasScale();
+		}
 		var x = (t.clientX - rect.left) * (canvas.width / rect.width);
 		var y = (t.clientY - rect.top) * (canvas.height / rect.height);
 		return { x: x, y: y };
@@ -868,14 +899,48 @@ function gotdrop(ev)
 		}
 	}
 
-	// Handle input events: route each character to the engine
+	// Track how much text has been sent to avoid duplicates on input events
+	var keyboardCharsSent = 0;
+
+	// Send remaining text that hasn't been forwarded to the engine yet
+	function sendRemainingKeyboardText() {
+		var val = keyboardInput.value;
+		if (keyboardCharsSent < val.length) {
+			for (var i = keyboardCharsSent; i < val.length; i++) {
+				sendCharToEngine(val[i]);
+			}
+			keyboardCharsSent = val.length;
+		}
+	}
+
+	// Handle input events: send only new characters to the engine
 	keyboardInput.addEventListener("input", function(e) {
 		var val = e.target.value;
-		// Process each character in the input
-		for (var i = 0; i < val.length; i++) {
-			sendCharToEngine(val[i]);
+		// Send only characters added since last input event
+		if (keyboardCharsSent < val.length) {
+			var newChars = val.substring(keyboardCharsSent);
+			for (var i = 0; i < newChars.length; i++) {
+				sendCharToEngine(newChars[i]);
+			}
+			keyboardCharsSent = val.length;
 		}
 		updateDebug("kb: typed " + val);
+	});
+
+	// Handle text deletion (user backspaces in the input field)
+	keyboardInput.addEventListener("input", function(e) {
+		var val = e.target.value;
+		if (val.length < keyboardCharsSent) {
+			var deleted = keyboardCharsSent - val.length;
+			// Send backspace key for each deleted character
+			for (var i = 0; i < deleted; i++) {
+				getWasmTableEntry(window.FTEC.evcb.key)(0, true, 8, 0);
+				setTimeout(function() {
+					getWasmTableEntry(window.FTEC.evcb.key)(0, false, 8, 0);
+				}, 50);
+			}
+			keyboardCharsSent = val.length;
+		}
 	});
 
 	// Handle Enter key (submit console command)
@@ -902,8 +967,9 @@ function gotdrop(ev)
 		}
 	});
 
-	// Done button
+	// Done button: send any remaining text, then close
 	document.getElementById("nzp-keyboard-done").addEventListener("click", function() {
+		sendRemainingKeyboardText();
 		closeKeyboard();
 	});
 
