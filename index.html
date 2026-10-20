@@ -1040,6 +1040,15 @@ function gotdrop(ev)
 	});
 
 	document.getElementById("nzp-keyboard-done").addEventListener("click", function() {
+		// Flush any characters that were typed but not yet sent
+		var val = keyboardInput.value;
+		if (val.length > keyboardCharsSent) {
+			for (var i = keyboardCharsSent; i < val.length; i++) {
+				sendCharToEngine(val[i]);
+			}
+		}
+		keyboardInput.value = "";
+		keyboardCharsSent = 0;
 		closeKeyboard();
 	});
 	document.getElementById("nzp-keyboard-cancel").addEventListener("click", function() {
@@ -1059,22 +1068,6 @@ function gotdrop(ev)
 		+ " border: 2px solid rgba(255,255,255,0.3);";
 	kbBtn.textContent = "KB";
 	overlay.appendChild(kbBtn);
-
-	// Check if game is in a menu (paused or not actively playing)
-	function isGameMenu() {
-		if (!engineReady) return true;
-		try {
-			// Check FTE's viewentity cl_paused or similar state
-			return window.FTEC ? window.FTEC.viewentity === null : true;
-		} catch(e) {
-			return true;
-		}
-	}
-
-	// Periodically check menu state to show/hide KB button
-	setInterval(function() {
-		kbBtn.style.display = isGameMenu() ? "flex" : "none";
-	}, 500);
 
 	kbBtn.addEventListener("touchstart", function(e) {
 		e.preventDefault();
