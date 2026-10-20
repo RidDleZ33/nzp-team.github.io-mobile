@@ -696,7 +696,7 @@ function gotdrop(ev)
 		lookStart = { x: t.clientX, y: t.clientY };
 		lookDragged = false;
 		if (adsActive) {
-			updateDebug("ads move start");
+			createAdsMoveStick(t);
 		} else {
 			// Send absolute position so reticle appears under finger (fixes menu alignment)
 			var cc = touchToCanvasCoords(t);
@@ -711,17 +711,7 @@ function gotdrop(ev)
 			var t = e.changedTouches[i];
 			if (t.identifier !== lookId) continue;
 			if (adsActive) {
-				// ADS: right side sends movement (strafe/forward)
-				var dx = (t.clientX - lastLook.x) * 3.0;
-				var dy = (t.clientY - lastLook.y) * 3.0;
-				virtualPad.axes[0] = dx / 40;
-				virtualPad.axes[1] = dy / 40;
-				// Clamp
-				if (virtualPad.axes[0] > 1) virtualPad.axes[0] = 1;
-				if (virtualPad.axes[0] < -1) virtualPad.axes[0] = -1;
-				if (virtualPad.axes[1] > 1) virtualPad.axes[1] = 1;
-				if (virtualPad.axes[1] < -1) virtualPad.axes[1] = -1;
-				updateDebug("ads move " + virtualPad.axes[0].toFixed(2) + "," + virtualPad.axes[1].toFixed(2));
+				updateAdsMoveStick(t);
 			} else {
 				// Normal: look zone sends look deltas
 				// Detect if this is a drag (not just tap jitter)
@@ -749,17 +739,7 @@ function gotdrop(ev)
 		if (t.identifier !== lookId) return false;
 		lookId = -1;
 		if (adsActive) {
-			// ADS: reset movement axes on release
-			virtualPad.axes[0] = 0;
-			virtualPad.axes[1] = 0;
-			// If not dragged significantly, fire
-			if (!lookDragged) {
-				setGamepadButton(7, true);
-				setGamepadButton(7, false);
-				updateDebug("ads fire");
-			} else {
-				updateDebug("ads move stop");
-			}
+			resetAdsMoveStick(true);
 		} else if (!lookDragged) {
 			// If not dragged significantly, send click events for menu interaction
 			callButton(0, true);
@@ -789,8 +769,8 @@ function gotdrop(ev)
 	var adsMoved = false;
 	var adsActive = false;
 
-	// Right-side action buttons to hide during ADS
-	var rightButtons = ["nzp-fire-btn", "nzp-jump-btn", "nzp-crouch-btn", "nzp-reload-btn", "nzp-use-btn", "nzp-grenade-btn"];
+	// Right-side action buttons to hide during ADS (except Fire)
+	var rightButtons = ["nzp-jump-btn", "nzp-crouch-btn", "nzp-reload-btn", "nzp-use-btn", "nzp-grenade-btn"];
 
 	function hideRightButtons() {
 		for (var i = 0; i < rightButtons.length; i++) {
@@ -800,6 +780,68 @@ function gotdrop(ev)
 	function showRightButtons() {
 		for (var i = 0; i < rightButtons.length; i++) {
 			document.getElementById(rightButtons[i]).style.display = "";
+		}
+	}
+
+	// Dynamic ADS movement joystick
+	var adsMoveStick = null;
+	var adsMoveKnob = null;
+	var adsMoveCenter = { x: 0, y: 0 };
+	var adsMoveTouchId = -1;
+	var adsMoveActive = false;
+	var adsMoveTap = true;
+	var adsMoveStart = { x: 0, y: 0 };
+
+	function createAdsMoveStick(t) {
+		if (adsMoveStick && adsMoveStick.parentNode) {
+			adsMoveStick.parentNode.removeChild(adsMoveStick);
+		}
+		adsMoveStick = document.createElement("div");
+		adsMoveStick.style.cssText = "position:absolute;left:" + (t.clientX - 60) + "px;top:" + (t.clientY - 60) + "px;" +
+			"width:120px;height:120px;background:rgba(255,255,255,0.1);border-radius:50%;pointer-events:none;z-index:10001;";
+		adsMoveKnob = document.createElement("div");
+		adsMoveKnob.style.cssText = "position:absolute;left:35px;top:35px;width:50px;height:50px;" +
+			"background:rgba(255,255,255,0.35);border-radius:50%;";
+		adsMoveStick.appendChild(adsMoveKnob);
+		overlay.appendChild(adsMoveStick);
+		adsMoveCenter = { x: t.clientX, y: t.clientY };
+		adsMoveTouchId = t.identifier;
+		adsMoveActive = true;
+		adsMoveTap = true;
+		adsMoveStart = { x: t.clientX, y: t.clientY };
+	}
+
+	function updateAdsMoveStick(t) {
+		if (!adsMoveActive) return;
+		var dx = t.clientX - adsMoveCenter.x;
+		var dy = t.clientY - adsMoveCenter.y;
+		var maxR = 45;
+		var dist = Math.sqrt(dx * dx + dy * dy);
+		if (dist > 10) adsMoveTap = false;
+		if (dist > maxR) {
+			dx = dx * (maxR / dist);
+			dy = dy * (maxR / dist);
+		}
+		adsMoveKnob.style.left = (35 + dx) + "px";
+		adsMoveKnob.style.top = (35 + dy) + "px";
+		virtualPad.axes[0] = dx / maxR;
+		virtualPad.axes[1] = dy / maxR;
+	}
+
+	function resetAdsMoveStick(fireIfTap) {
+		if (adsMoveStick && adsMoveStick.parentNode) {
+			adsMoveStick.parentNode.removeChild(adsMoveStick);
+		}
+		adsMoveStick = null;
+		adsMoveKnob = null;
+		adsMoveActive = false;
+		if (fireIfTap && adsMoveTap) {
+			setGamepadButton(7, true);
+			setGamepadButton(7, false);
+			updateDebug("ads fire");
+		} else {
+			virtualPad.axes[0] = 0;
+			virtualPad.axes[1] = 0;
 		}
 	}
 
@@ -833,6 +875,7 @@ function gotdrop(ev)
 		adsTouchId = -1;
 		adsActive = false;
 		callButton(2, false);
+		resetAdsMoveStick(true);
 		showRightButtons();
 		updateDebug("ads off" + (adsMoved ? " (aimed)" : ""));
 		return true;
