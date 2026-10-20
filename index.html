@@ -739,7 +739,7 @@ function gotdrop(ev)
 		if (t.identifier !== lookId) return false;
 		lookId = -1;
 		if (adsActive) {
-			resetAdsMoveStick(true);
+			resetAdsMoveStick(true, false);
 		} else if (!lookDragged) {
 			// If not dragged significantly, send click events for menu interaction
 			callButton(0, true);
@@ -828,7 +828,7 @@ function gotdrop(ev)
 		virtualPad.axes[1] = dy / maxR;
 	}
 
-	function resetAdsMoveStick(fireIfTap) {
+	function resetAdsMoveStick(fireIfTap, stopMoving) {
 		if (adsMoveStick && adsMoveStick.parentNode) {
 			adsMoveStick.parentNode.removeChild(adsMoveStick);
 		}
@@ -839,7 +839,8 @@ function gotdrop(ev)
 			setGamepadButton(7, true);
 			setGamepadButton(7, false);
 			updateDebug("ads fire");
-		} else {
+		}
+		if (stopMoving) {
 			virtualPad.axes[0] = 0;
 			virtualPad.axes[1] = 0;
 		}
@@ -875,7 +876,7 @@ function gotdrop(ev)
 		adsTouchId = -1;
 		adsActive = false;
 		callButton(2, false);
-		resetAdsMoveStick(true);
+		resetAdsMoveStick(true, true);
 		showRightButtons();
 		updateDebug("ads off" + (adsMoved ? " (aimed)" : ""));
 		return true;
